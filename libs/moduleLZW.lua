@@ -261,7 +261,7 @@ local function _LZWStringCompress(str)
 	
 	local token = dict_size-254
 	--activePico:Poke2(destAdr,dict_size-254) -- store token-count 
-	--print(token, token & 0xff, token>>8)
+	--PrintDebug(token, token & 0xff, token>>8)
 	return string.char(token & 0xff, token>>8) .. stringBitsGet()
 end
 
@@ -319,7 +319,7 @@ local function _ListInitalize()
 	_LZWList = activePico:SaveDataGet("LZW","list") or {}
 	_baseAdr = activePico:SaveDataGet("LZW","baseAdr") or 0x8000
 	_limitSize = activePico:SaveDataGet("LZW","limitSize") or 0x4300 -- ROM Size
-	_writeAdr = 0
+	_writeAdr = _baseAdr
 	for nb,d in pairs(_LZWList) do
 		if d.name == nil then d.name="" end
 		if d.packAdr >= _baseAdr then
@@ -338,26 +338,26 @@ local function _ListInitalize()
 	--[[ debugcode!
 	if _LZWList[1] then
 		str = _LZWStringCompress(activePico:PeekString(_LZWList[1].srcAdr,_LZWList[1].srcSize))
-		print("compress",#str, _LZWList[1].packSize)
+		PrintDebug("compress",#str, _LZWList[1].packSize)
 		for nb,code in str:codes() do
 			if activePico:Peek(_LZWList[1].packAdr + nb - 1) != code then
-				print("mist",nb, activePico:Peek(_LZWList[1].packAdr + nb - 1) , code)
+				PrintDebug("mist",nb, activePico:Peek(_LZWList[1].packAdr + nb - 1) , code)
 				break
 			end
 		end
-		print("--")
+		PrintDebug("--")
 	end
 	
 	if _LZWList[1] then
 		str = _LZWStringDecompress(activePico:PeekString(_LZWList[1].packAdr,_LZWList[1].packSize))
-		print("decompress",#str, _LZWList[1].srcSize)
+		PrintDebug("decompress",#str, _LZWList[1].srcSize)
 		for nb,code in str:codes() do
 			if activePico:Peek(_LZWList[1].srcAdr + nb - 1) != code then
-				print("mist",nb, activePico:Peek(_LZWList[1].srcAdr + nb - 1) , code)
+				PrintDebug("mist",nb, activePico:Peek(_LZWList[1].srcAdr + nb - 1) , code)
 				break
 			end
 		end
-		print("--")
+		PrintDebug("--")
 		
 	end
 	--]]

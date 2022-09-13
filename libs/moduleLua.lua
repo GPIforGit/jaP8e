@@ -1290,7 +1290,7 @@ local function _MenuInit()
 	end, "CTRL+P")
 	
 		
-	local mSearch = m.menuBar:Add("Search")
+	local mSearch = m.menuBar:Add("&Search")
 	MenuAdd(mSearch, "luaFind", "Find \t ctrl+f", function() _FindOpen() end, "CTRL+F")
 	MenuAdd(mSearch, "luaNext", "Find next \t F3", _FindNext, "F3")
 	MenuAdd(mSearch, "luaPrevious", "Find previous \t shift+F3", _FindPrevious,"SHIFT+F3")
@@ -1972,7 +1972,7 @@ function m.Draw(m)
 		if leftSideInfo then
 			local x,y = leftSideInfo & 0xf, (leftSideInfo >> 4) & 0xf
 			local xx,yy = _rectLSInfo.x, _rectLSInfo.y + 5
-			xx = DrawText(xx,yy,string.format("id: 0x%02x - %03i - press [alt]+[space] to play / stop",leftSideInfo,leftSideInfo),COLDARKWHITE)
+			xx = DrawText(xx,yy,string.format("id: 0x%02x - %03i - press [ctrl]+[t] to play / stop",leftSideInfo,leftSideInfo),COLDARKWHITE)
 			if _leftSideMode == "sound" then
 				_leftSideSFX = leftSideInfo
 			else 
@@ -2292,13 +2292,13 @@ function m.KeyDown(m, sym, scan, mod)
 		
 	local dx, dy = 0,0
 	
-	-- map alt + UP/DOWN to ctrl + UP/DOWN
+	--[[ map alt + UP/DOWN to ctrl + UP/DOWN
 	if isAlt and scan == "DOWN" then _NextFunction() return true end
 	if isAlt and scan == "UP" then _PreviousFunction() return true end
+	--]]
 	
-	-- no alt key...
-	if isAlt then 
-		if sym == "SPACE" then
+	if isCtrl  then
+		if sym == "T" then
 			local mus,pat,s1,s2,s3,s4,t1,t2,t3,t4 = PicoRemoteStatus()		
 			if mus or s1 != -1 then
 				-- stop playing
@@ -2314,13 +2314,7 @@ function m.KeyDown(m, sym, scan, mod)
 				PicoRemoteWrite(  Pico.MUSIC , Pico.MUSICLEN, activePico:MusicAdr() )
 				PicoRemoteMusic( _leftSideMusic )
 			end
-		end
-		return 
-	end
-	
-	
-	if isCtrl  then
-		if scan == "TAB" then
+		elseif scan == "TAB" then
 			local x = _tabs[(_activeTab.index - 1 + (isShift and -1 or 1)) % #_tabs +1]
 			if x then x.b:OnClick() end
 				

@@ -1,9 +1,20 @@
 --[[ todo
-	FEATURECOMPLETE!
-	
-	menu destroy überall einfügen!
-	
 
+	changelog
+		v0.91
+			* lzh - fix bug where lzh pack to 0 instead of base adr.
+			* main - stop spaming empty lines while running a p8
+			* main - fix possible endless write protect.
+			* main - update decompressing code for .p8.png and .p8.rom 
+			* main - alt / f10 controls now the menu bar
+			* lua - alt + up / down doesn't work any more - use ctrl + up/down
+			* lua - ctrl + m plays the music/sfx, not alt+space
+			* main - jaP8e is now a windows application. In Debug-Menu you can open a console.
+			* main - remove link and start.bat, add a "starter"-execute
+			* main - new icon :)
+			
+		
+	
 	[gfx]0808000000000888888088888888888ffff888f1ff1808fffff00033330000700700[/gfx]
 	
 		 pattern
@@ -61,7 +72,7 @@ cursorHand = nil
 -- some constants
 
 TITLE = "jaP8e"
-VERSION = "0.9 BETA"
+VERSION = "0.91 BETA"
 -- min size of the main window
 MINHEIGHT = 667
 MINWIDTH = 1306
@@ -90,6 +101,12 @@ COLRED 			= {r=0xFF, g=0x00, b=0x00, a=0xff}
 --===================================================================
 -----------------------------------------------------------------MISC
 --===================================================================
+
+function PrintDebug(...)
+	--if config.debug then
+	return print(...)
+	--end
+end
 
 -- light or dark the a color
 function ColorOffset(c,offset)
@@ -142,8 +159,8 @@ end
 -- handle global errors
 local function _ErrorMessageHandler(err)
 	-- output traceback
-	print("[ERROR]", err)		
-	print(debug.traceback())
+	PrintDebug("[ERROR]", err)		
+	PrintDebug(debug.traceback())
 	SDL.Request.Message(window,TITLE,"Critical error catched.'\n" .. tostring(err),"OK STOP") 
 	popup:ForceClose()
 	return err
@@ -168,7 +185,7 @@ configFile = ".\\jaP8e.ini"
 config = {
 	doAutoOverviewZoom = true, -- automatic change zoom for sprite, charset, label
 	fpsCap = 30, -- limit fps to 30fps
-	doRemote = true, -- allow pico remote
+	doRemote = false, -- allow pico remote
 	jpgQuality = 90, -- exported jpg quality
 	doDithering = false, -- dither imported images
 	doColorOptimization = false, -- choose best matching colors for imported images
@@ -179,6 +196,7 @@ config = {
 	cursorBlink = 60, -- cursor blink rate
 	writeProtectedPico8 = true, -- while running white protect editor
 	sizeAsHex = true, -- display size values as hex or dezimal
+	debug = false,
 }
 
 -- comments in the config file, when the parameter doesn't exist
@@ -195,7 +213,8 @@ configComment = {
 	pico8parameter = "additional parameter before starting pico8 / remote. --run is already in use!",	
 	cursorBlink = "cursor blink rate",
 	writeProtectedPico8 = "Write protect project when it is running",
-	sizeAsHex = "use hex values for size"
+	sizeAsHex = "use hex values for size",
+	debug = "Display debug messages in console window",
 }
 
 -- phrase "key = value" strings
@@ -967,9 +986,17 @@ function FilesRun()
 	
 	-- execute pico-8
 	local path,name,extension = SplitPathFileExtension(config.pico8execute)
-	_filesActive.process = TinyProcess.Open('"'..config.pico8execute..'" '..'-run "'.._filesActive.file..'" ' .. (config.pico8parameter or ""), path, false)
+	local cmd = '"'..config.pico8execute..'" '..'-run "'.._filesActive.file..'" ' .. (config.pico8parameter or "")
+	PrintDebug(cmd)
+	_filesActive.process = TinyProcess.Open(cmd, path, false)
 	
-	if config.writeProtectedPico8 then
+	
+	if not _filesActive.process:IsRunning() then
+		-- is not running any more
+		_filesActive.process:Close()
+		_filesActive.process = nil
+		
+	elseif config.writeProtectedPico8 then
 		activePico.writeProtected = true
 		InfoBoxSet("Write protection enabled.")
 	else
@@ -986,12 +1013,13 @@ function FilesCheckRunning()
 	local text = _filesActive.process:Read()
 	if text then
 		if text:sub(-1)== "\n" then text = text:sub(1,-2) end
-		print(text)
+		if text:trim() != "" then PrintDebug("[pico8 stdin]",text) end
 	end
+	
 	text = _filesActive.process:ReadError()
 	if text then
 		if text:sub(-1)== "\n" then text = text:sub(1,-2) end
-		print(text)
+		if text:trim() != "" then PrintDebug("[pico8 error]",text) end
 	end
 
 	if  not _filesActive.process:IsRunning() then
@@ -1159,8 +1187,8 @@ local function _ModulesMessageHandler(err)
 	end
 	
 	-- output error
-	print("[ERROR]",name, err)		
-	print(debug.traceback())
+	PrintDebug("[ERROR]",name, err)		
+	PrintDebug(debug.traceback())
 	
 	-- ask user what to do
 	if SDL.Request.Message(window,TITLE,"Error on module '".. tostring(name) .. "'\n" .. tostring(err),"OKCANCEL STOP") == "CANCEL" then
@@ -1877,7 +1905,7 @@ end
 
 -- Add File-Menu to a bar
 function MenuAddFile(bar)
-	local mFile = bar:Add("File")
+	local mFile = bar:Add("&File")
 	--***************************
 	MenuAdd(mFile, "new", "New \t ctrl+n", function(e) FilesNew() end, "CTRL+N")
 	MenuAdd(mFile, "open", "Open ... \t ctrl+o", function(e) FilesOpen() end, "CTRL+O")	
@@ -1993,7 +2021,7 @@ end
 
 -- Add Edit-Menu to a bar
 function MenuAddEdit(bar)
-	local mEdit = bar:Add("Edit")
+	local mEdit = bar:Add("&Edit")
 	--***************************
 	MenuAdd(mEdit, "undo", "Undo \t ctrl+z",
 		function (e)
@@ -2107,7 +2135,7 @@ end
 
 -- Add Pico-8-Menu to a bar
 function MenuAddPico8(bar)
-	local mPico = bar:Add("Pico-8")
+	local mPico = bar:Add("&Pico-8")
 	--****************************
 	MenuAdd(mPico, "run", "Save and Run\t F5", 
 		function (e)	
@@ -2156,7 +2184,7 @@ end
 
 -- Add Zoom-Menu to a bar
 function MenuAddZoom(bar)	
-	local menuZoom = bar:Add("Zoom")
+	local menuZoom = bar:Add("&Zoom")
 	--*************************
 	for nb,z in pairs(zoomLevels) do
 		MenuAdd(menuZoom, z[1], z[3],
@@ -2178,7 +2206,7 @@ end
 
 -- Add Settings-Menu to a bar
 function MenuAddSettings(bar)
-	local mSettings = bar:Add("Settings")
+	local mSettings = bar:Add("&Options")
 	--***********************************
 	
 	MenuAdd(mSettings, "sizeAsHex", "Use hex values for size",
@@ -2230,12 +2258,22 @@ end
 
 -- Add Debug-Menu to a bar
 function MenuAddDebug(bar)
-	local mDebug = bar:Add("Debug")
-	MenuAdd(mDebug, "dodebug","Debug", 
+	local mDebug = bar:Add("&Debug")
+	MenuAdd(mDebug, "dodebug","Start debug", 
 		function(e)
+			print("Type 'cont' for continue")
 			debug.debug ()
 		end, 
 		nil
+	)
+	mDebug:Add()
+	MenuAdd(mDebug, "debugmsg","Show debug messages",
+		function(e)
+			config.debug = not config.debug
+			_menuActive:SetCheck("debugmsg", config.debug)
+			ConsoleShow(config.debug)
+			MainWindowTitle()
+		end
 	)
 end	
 
@@ -2258,6 +2296,7 @@ function MenuActivate(bar)
 	_menuActive:SetCheck("doRemote", config.doRemote)	
 	_menuActive:SetCheck("writeProtectedPico8", config.writeProtectedPico8)
 	_menuActive:SetCheck("sizeAsHex", config.sizeAsHex)
+	_menuActive:SetCheck("debugmsg",config.debug)
 	MenuSetZoom()
 	-- call module-menu-update
 	ModulesCall("MenuUpdate",_menuActive)
@@ -2418,8 +2457,10 @@ function PicoRemoteWrite(adr,size,srcAdr)
 			-- send data to remote
 			adr += iStart
 			hex = hex:sub(iStart*2+1, iEnd*2+2)
+			PrintDebug("picoremote: write @"..adr.. " "..#hex.."bytes")			
 			PicoRemote.process:Write("@"..adr.."\n")		
 			PicoRemote.process:Write("!"..hex.."\n")
+			PrintDebug("picoremote: done")
 			PicoRemoteOldAdr = adr 
 			PicoRemoteOldHex = hex
 		end
@@ -2464,6 +2505,7 @@ function PicoRemoteUpdate()
 
 	if not PicoRemote.process:IsRunning() then
 		-- pico8 has stopped working - maybe user has closed id? restart
+		--PrintDebug("Stop working?")
 		PicoRemoteStop()
 		PicoRemoteStart()
 		
@@ -2494,7 +2536,7 @@ function PicoRemoteUpdate()
 					
 				else
 					-- should not happen!
-					print("Unkown Remote message:",str)
+					PrintDebug("Unkown Remote message:",str)
 						
 				end
 			end
@@ -2548,6 +2590,14 @@ end
 --------------------------------------------------------Window / Main
 --===================================================================
 
+_oldWinTitle = nil
+function MainWindowTitle(str)
+	if _oldWinTitle != str then
+		window:SetTitle(TITLE.." v"..VERSION.. ((str and str!="") and (" - "..str) or ""))
+		_oldWinTitle = str
+	end
+end
+
 _drawMainWindowOldTimer = 0
 -- draw the main window
 function MainWindowDraw()
@@ -2599,7 +2649,7 @@ function MainWindowDraw()
 	InfoBoxDraw()
 		
 	-- display max FPS for debug information
-	local str = TITLE .. " v" .. VERSION .." ".. string.format("%03.3f %03.3f", SDL.Time.Get()-_drawMainWindowOldTimer, 1/(SDL.Time.Get()-_drawMainWindowOldTimer))
+	local str = string.format("%03.3f %03.3f", SDL.Time.Get()-_drawMainWindowOldTimer, 1/(SDL.Time.Get()-_drawMainWindowOldTimer))
 	
 	-- free unused processor time 
 	local wtime = (1000 / config.fpsCap) - (SDL.Time.Get() - _drawMainWindowOldTimer) * 1000 -1
@@ -2612,7 +2662,9 @@ function MainWindowDraw()
 	
 	-- output the stats to the window-title
 	str ..= " - ".. string.format("%03.3f %03.3f", SDL.Time.Get()-_drawMainWindowOldTimer, 1/(SDL.Time.Get()-_drawMainWindowOldTimer))
-	window:SetTitle(str)
+	if config.debug then 
+		MainWindowTitle(str)
+	end
 	
 	_drawMainWindowOldTimer = SDL.Time.Get()
 end
@@ -2631,6 +2683,7 @@ end
 function Init()
 	-- load configuration	
 	ConfigLoad(configFile)
+	ConsoleShow(config.debug)
 		
 	-- Init SDL
 	if not SDL.Init("EVENTS VIDEO") then
@@ -2645,12 +2698,19 @@ function Init()
 	end
 		
 	-- open window
-	window = SDL.Window.Create(TITLE, "CENTERED", "CENTERED", MINWIDTH, MINHEIGHT + SDL.Menu.Height(), "RESIZABLE")
+	window = SDL.Window.Create(TITLE, "CENTERED", "CENTERED", MINWIDTH, MINHEIGHT + SDL.Menu.Height(), "RESIZABLE HIDDEN")
 	if window == nil then
 		SDL.Request.Message(nil,TITLE,"Couldn't open main window.\n" .. SDL.Error.Get(),"OK STOP")
 		return false
 	end
 	window:SetMinimumSize(MINWIDTH, MINHEIGHT)
+	MainWindowTitle("")
+	
+	local surface = SDL.Surface.Load("jaP8e.png")
+	if surface then
+		window:SetIcon(surface)
+		surface:Free()
+	end
 	
 	-- Renderer
 	renderer = SDL.Render.Create(window, -1, "ACCELERATED PRESENTVSYNC TARGETTEXTURE")
@@ -2711,6 +2771,8 @@ function Init()
 	
 	SDL.TextInput.Start()	
 	
+	window:Show()
+	PrintDebug("Initalized.")
 	return true
 end
 
@@ -2761,16 +2823,19 @@ function Quit()
 	SDL.Image.Quit()
 	SDL.Quit()
 	
-
+    PrintDebug("Quit")
 end
 
 -- main routine
 function main()
+	
 
 	if not Init() then
 		Quit()
 		return 1
 	end
+	
+	PrintDebug("main is running")
 	
 	quit = false
 	
@@ -2789,12 +2854,12 @@ function main()
 			elseif ev.type == "MENU" then
 				-- a menu item has clicked
 				if not MenuCall(ev.id) then
-					print("menu pressed: ",ev.id)
+					PrintDebug("menu pressed: ",ev.id)
 				end
 
 			elseif ev.type=="USER" then
 				-- userevent
-				print("---- userevent")
+				PrintDebug("---- userevent")
 				table.debug(ev)
 			
 			elseif ev.type == "MOUSEBUTTONDOWN" then
@@ -2878,15 +2943,15 @@ function main()
 				TexturesForceRedraws()
 				
 			elseif ev.type == "KEYDOWN" then
-				--print ("----- EVENT: "..tostring(ev.type).." -----")
+				--PrintDebug ("----- EVENT: "..tostring(ev.type).." -----")
 				--table.debug(ev)
-				--print("down",ev.sym, ev.scancode, ev.mod)	
+				--PrintDebug("down",ev.sym, ev.scancode, ev.mod)	
 				 -- a message requester can filter a keyup!
 		
 				-- here first check, if a menu shortcut has pressed
 				if not MenuCheckKeyboard(ev.sym, ev.mod) then
 					if not SecureCall(popup.KeyDown, popup, ev.sym, ev.scancode, ev.mod) then
-						--print(ev.sym, ev.scancode, ev.mod)				
+						--PrintDebug(ev.sym, ev.scancode, ev.mod)				
 						if not ModulesCallSub("inputs", "KeyDown", ev.sym, ev.scancode, ev.mod) then
 							if ev.sym == "DELETE" and ModulesExistCall("Delete") then
 								ModulesCall("Delete")								
@@ -2898,7 +2963,7 @@ function main()
 				end
 					
 			elseif ev.type == "KEYUP" then
-				--print("up",ev.sym, ev.scancode, ev.mod)	
+				--PrintDebug("up",ev.sym, ev.scancode, ev.mod)	
 				-- first check, if popup handle the event, then the next...				
 				if not SecureCall(popup.KeyUp, popup, ev.sym, ev.scancode, ev.mod) then
 					if not ModulesCallSub("inputs", "KeyUp", ev.sym, ev.scancode, ev.mod) then
@@ -2920,7 +2985,7 @@ function main()
 			elseif ev.type != nil then
 				if ev.type != "MOUSEMOTION" and ev.type != "TEXTEDITING" then-- and ev.type!="WINDOWEVENT" and ev.type!="SYSWMEVENT" then
 					
-					print ("----- EVENT: "..tostring(ev.type).." -----")
+					PrintDebug ("----- EVENT: "..tostring(ev.type).." -----")
 					table.debug(ev)
 				end
 			--]]
@@ -2948,5 +3013,9 @@ function main()
 	end
 	
 	Quit()
+	
+	PrintDebug("end")
 	return 0
 end
+
+PrintDebug("jaP8e source code readed.")

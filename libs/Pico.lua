@@ -953,7 +953,6 @@ function Lib.LoadP8PNG(pico,file)
 	if sha1.sha1(str:sub(1,0x8000)) != cartSHA1 and cartSHA1 != "0000000000000000000000000000000000000000" then -- old format doesn't have a checksum
 		return false, "sha1 checksum error"
 	end
-	
 
 				
 	-- decompress lua
@@ -1806,7 +1805,7 @@ local LITERALS = 60
 local literal = "^\n 0123456789abcdefghijklmnopqrstuvwxyz!#%(){}[]<>+=/*:;.,~_"
 
 local function getbit()
-	local ret = src_buf[src_pos] & bit != 0 and 1 or 0
+	local ret = (src_buf[src_pos] & bit != 0) and 1 or 0
 	bit <<= 1
 	if bit == 256 then
 		bit = 1
@@ -1847,7 +1846,7 @@ end
 
 local function getnum()
 	local bits = (3 - getchain(1, 2)) * BLOCK_DIST_BITS
-	return getval(bits)
+	return getval(bits),bits
 end
 
 local function READ_VAL()
@@ -1869,7 +1868,6 @@ function ___.LuaDecompress(pico, str)
 	for i=0x4300,0x7fff do
 		src_buf[i-0x4300] = str:byte(i+1)
 	end
-	--print("CODE",string.char(src_buf[0]), string.char(src_buf[1]),string.char(src_buf[2]),string.char(src_buf[3]))
 	
 	if src_buf[0] == 58 and src_buf[1] == 99 and src_buf[2] == 58 and src_buf[3] == 00 then
 		-- :c:
@@ -1941,21 +1939,34 @@ function ___.LuaDecompress(pico, str)
 		local raw_len  = header[4] * 256 + header[5]
 		local comp_len = header[6] * 256 + header[7]
 		
+		local first = true
 
 		while src_pos < comp_len and dest_pos < raw_len do 
 
 			local block_type = getbit()
-
-
+			
+			
 			if block_type == 0 then
 
-				local block_offset = getnum() + 1
-				local block_len = getchain(BLOCK_LEN_CHAIN_BITS, 100000) + PXA_MIN_BLOCK_LEN
+				local block_offset,bits_len = getnum()
+				block_offset += 1
+				if bits_len == 10 and block_offset == 1  then
+					-- special case - uncompressed memory
+					while true do
+						local c = getval(8)
+						if c == 0 then break end
+						out_p[dest_pos] = c
+						dest_pos += 1
+					end
+						
+				else
+					local block_len = getchain(BLOCK_LEN_CHAIN_BITS, 100000) + PXA_MIN_BLOCK_LEN
 
-				while block_len > 0 do 
-					out_p[dest_pos] = out_p[dest_pos - block_offset] or 0
-					dest_pos += 1
-					block_len -= 1
+					while block_len > 0 do 
+						out_p[dest_pos] = out_p[dest_pos - block_offset] or 0
+						dest_pos += 1
+						block_len -= 1
+					end
 				end
 
 				out_p[dest_pos] = 0			
@@ -2018,6 +2029,7 @@ function ___.LuaDecompress(pico, str)
 			str ..= string.char(out_p[i])
 		end		
 	end
+	
 	return ret, "OK"
 end
 

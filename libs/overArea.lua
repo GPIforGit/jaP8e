@@ -1194,10 +1194,10 @@ function overAreaMeta.BasicLayout(oa)
 	
 	--[[
 	if perfectHeight != MINHEIGHT then
-		print("WRONG MIN HEIGHT:",perfectHeight, MINHEIGHT)
+		PrintDebug("WRONG MIN HEIGHT:",perfectHeight, MINHEIGHT)
 	end
 	if perfectWidth != MINWIDTH then
-		print("WRONG MIN WIDTH:",perfectWidth, MINWIDTH)
+		PrintDebug("WRONG MIN WIDTH:",perfectWidth, MINWIDTH)
 	end
 	--]]
 	

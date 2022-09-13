@@ -731,7 +731,7 @@ function m.KeyDown(m, sym, scan, mod)
 		local f2 = string.find("ZSXDCVGBHNJMQ2W3ER5T6Y7UI",scan) 
 		local sfxNotes = _sfx.notes
 		local note = sfxNotes[ _cursorNote ]
-		--print (_cursorNote == _cursorNoteEnd,_cursorNote, _cursorNoteEnd,mod:hasflag("SHIFT"))
+		--PrintDebug (_cursorNote == _cursorNoteEnd,_cursorNote, _cursorNoteEnd,mod:hasflag("SHIFT"))
 		if _cursorNote == _cursorNoteEnd then
 				
 			if mod:hasflag("SHIFT")>0 then 			
