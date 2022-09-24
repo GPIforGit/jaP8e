@@ -18,8 +18,6 @@ local _128Size = 32	-- for 16x16 rect
 local _128SizeBig = 64 -- for 8x8 rect
 local _lines = {}	-- position of the line in sourcecode
 local _functions = {} -- list of all functions in current tab
-local _numberWidth -- line number width
-local _numberFormat -- format string for line numbers
 local _rectNumber -- rect for linenumbers
 local _colors = {} -- colorinformation of a character in sourcecode
 local _cursorPos = 1 
@@ -62,6 +60,207 @@ local _fakeBraces = {
 	["do"] = "<", ["end"] = ">", ["repeat"] = "<", ["until"] = ">", ["then"] = "<", ["elseif"] = ">", ["function"] = "<"
 }
 
+
+--===================================================================
+-----------------------------------------------------------------Font
+--===================================================================
+local _fontPicoWidth = {} 
+local _fontPicoWidthMin = {}
+local _fontPicoYPos = {}
+local _fontPicoHeight 
+local _fontMaxDigitWidth
+local _fontMaxWidth
+local _fontOwn
+local _fontOwnList = {}
+local _fontMidCharWidth
+
+local function _FontInit()
+	local w1,h1 =  SizeText("+")
+	local w2,h2 =  SizeText("+",2)
+	Add = function(z)
+		table.insert( _fontOwnList, {w = w1 * z, h = h1 * z, z = z, f = 1})
+		table.insert( _fontOwnList, {w = w2 * z, h = h2 * z, z = z, f = 2})
+	end
+	Add(0.5)
+	Add(1)
+	Add(2)
+	
+	table.sort(_fontOwnList, function(a,b) return a.w < b.w end )	
+end
+
+local function _FontChoose()
+	if config.LuaFontCustom then
+		local lw,hw
+		local count = 0
+		lw, hw, _fontPicoHeight = activePico:Peek(Pico.CHARSET) , activePico:Peek(Pico.CHARSET+1), activePico:Peek(Pico.CHARSET+2)
+		local adjEnable = (activePico:Peek(Pico.CHARSET + 5) & 1) == 1
+		_fontMaxDigitWidth = 0
+		_fontMidCharWidth = 0
+		for char = 0, 255 do 
+			local offx, oneup = activePico:CharsetGetVariable(char)
+			_fontPicoWidth[char] = (char < 0x80 and lw or hw) + (adjEnable and offx or 0)
+			_fontPicoWidthMin[char] = math.min(_fontPicoWidth[char],8)
+			_fontPicoYPos[char] = oneup and -1 or 0
+			if char >= 48 and char <= 57 and _fontPicoWidth[char] > _fontMaxDigitWidth then 
+				_fontMaxDigitWidth = _fontPicoWidth[char]
+			end
+			if (char >= 65 and char <= 90) or (char >= 97 and char <= 122) then
+				_fontMidCharWidth += _fontPicoWidth[char]
+				count += 1
+			end
+				
+		end
+	
+		_fontMidCharWidth \= count
+	
+		tex = TexturesGetCharset()
+		tex:SetAlphaMod(255)
+		tex:SetBlendMode("BLEND")
+		tex:SetScaleMode("NEAREST")
+	else
+		_fontOwn = _fontOwnList[config.LuaZoom]
+	end	
+end
+
+local function _FontDraw(x,y,char,col)
+	local tex = TexturesGetCharset()
+	
+	if type(char) == "string" then
+		local yy
+		for nb, c in char:codes() do
+			x,yy = _FontDraw(x, y, c, col)
+		end
+		return x, yy
+	else
+		if config.LuaFontCustom then
+			if char != 10 and char != 9 then
+				local rectSrc = {
+					x = (char & 0xf) * 8,
+					y = (char >> 4) * 8,
+					w = _fontPicoWidthMin[char],
+					h = _fontPicoHeight,
+				}
+				local rectDest = {
+					x = x,
+					y = y + _fontPicoYPos[char] * config.LuaZoom,
+					w = _fontPicoWidthMin[char] * config.LuaZoom,
+					h = _fontPicoHeight * config.LuaZoom
+				}
+				
+				rectDest.x += 1
+				rectDest.y += 1				
+				tex:SetColorMod(0, 0, 0)
+				renderer:Copy(tex, rectSrc, rectDest)
+				
+				rectDest.x -= 1
+				rectDest.y -= 1				
+				tex:SetColorMod(col.r, col.g, col.b)
+				renderer:Copy(tex, rectSrc, rectDest)
+			end
+			return x + _fontPicoWidth[char] * config.LuaZoom, y + _fontPicoHeight * config.LuaZoom
+		else
+			if char >= 65 and char <= 90 then
+				char += 97-65
+			elseif char >= 97 and char <= 122 then
+				char += 65-97
+			end			
+			return DrawChar(x,y,char,col,_fontOwn.z,_fontOwn.f)
+		end
+	end
+end
+
+local function _FontLineWidth(line, maxOffset, findOffset)	
+	if line < 1 and line > #_lines then return 0 end
+	
+	if maxOffset then	
+		maxOffset = math.min(_lines[line].e, _lines[line].s + maxOffset) 
+	else
+		maxOffset = _lines[line].e
+	end
+	
+	if config.LuaFontCustom then
+		local w = 0
+				
+		for pos,char in activePico:LuaCodes(_lines[line].s, maxOffset ) do 
+			w += _fontPicoWidth[char] * config.LuaZoom	
+			if findOffset and w > findOffset then
+				return pos
+			end
+		end	
+		if findOffset then 
+			return _lines[line].e
+		end
+		return w
+	else
+		local w = 0
+				
+		for pos,char in activePico:LuaCodes(_lines[line].s, maxOffset ) do 
+			w += char >= 0x80 and _fontOwn.w * 2 or _fontOwn.w
+			if findOffset and w > findOffset then
+				return pos
+			end
+		end	
+		if findOffset then 
+			return _lines[line].e
+		end
+		return w
+	
+	end
+end
+
+local function _FontHeight() 
+	if config.LuaFontCustom then
+		return _fontPicoHeight * config.LuaZoom
+	else
+		return _fontOwn.h
+	end
+end
+
+local function _FontCharSize(char)
+	if config.LuaFontCustom then
+		local w = 0
+		if type(char) == "string" then
+			for pos,c in char:codes() do 
+				w += _fontPicoWidth[c] * config.LuaZoom	
+			end		
+		else
+			w = _fontPicoWidth[char] * config.LuaZoom
+		end
+		return w, _fontPicoHeight * config.LuaZoom
+	else
+	
+		local w = 0
+		if type(char) == "string" then
+			for pos,c in char:codes() do 
+				w += c >= 0x80 and _fontOwn.w * 2 or _fontOwn.w
+			end		
+		else
+			w = char >= 0x80 and _fontOwn.w * 2 or _fontOwn.w
+		end
+		return w, _fontOwn.h
+	end
+end
+
+local function _FontNumberWidth()
+	if config.LuaFontCustom then
+		return _fontMaxDigitWidth * config.LuaZoom
+	else
+		return _fontOwn.w
+	end
+end
+
+local function _fontMaxWidth()
+	if config.LuaFontCustom then
+		return _fontMidCharWidth * config.LuaZoom
+	else
+		return _fontOwn.w
+	end
+end
+
+--===================================================================
+---------------------------------------------------line/offset/cursor
+--===================================================================
+
 -- convert position to line/offset
 local function _PosToLineOffset(pos)
 	for nb,l in pairs(_lines) do
@@ -100,12 +299,13 @@ local function _VisibleCursor()
 	m.scrollbar.y:SetValues(line)
 	
 	
+	cPixelOffset = _FontLineWidth(cLine, cOffset - 2)
 	local offset, pageWidth = m.scrollbar.x:GetValues()
-	if cOffset - 7 < offset then
-		offset = cOffset - 7
+	if cPixelOffset - 7 * _fontMaxWidth() < offset then
+		offset = cPixelOffset - 7 * _fontMaxWidth()
 	end
-	if cOffset + 6 > offset + pageWidth then
-		offset = cOffset + 6 - pageWidth
+	if cPixelOffset + 6 * _fontMaxWidth() > offset + pageWidth then
+		offset = cPixelOffset + 6 * _fontMaxWidth() - pageWidth
 	end
 	m.scrollbar.x:SetValues(offset)
 	
@@ -146,6 +346,11 @@ local function _UpdateFunctionSelection(forced)
 		end
 	end
 end
+
+
+--===================================================================
+----------------------------------------------------coloring/phrasing
+--===================================================================
 
 -- remove empty tabs. 
 local function _ClearEmptyTabs()
@@ -279,11 +484,11 @@ local function _ColorizeCode()
 	-- very quick and dirty code
 	-- maybe not perfect, but it work
 	-- it colorize only the code in the current tab.
-	local w2,h2 = SizeText("+",2)
+	--local w2,h2 = SizeText("+",2)
 	_lines = {}
 	_functions = {}
 	
-	_maxLineWidth = _rectSourceCode.w \ h2
+	_maxLineWidth = _rectSourceCode.w --\ h2
 	local lineStart = _activeTab.posStart
 	local strStart, strType, lastType = 2,-1
 	local typ = nil
@@ -312,7 +517,7 @@ local function _ColorizeCode()
 	for pos,code in activePico:LuaCodes(_activeTab.posStart, _activeTab.posEnd ) do
 		if code == 10 then			
 			table.insert(_lines,{s = lineStart, e = pos, indent = -1})
-			_maxLineWidth = math.max(_maxLineWidth, pos - lineStart + 10)
+			--_maxLineWidth = math.max(_maxLineWidth, pos - lineStart + 10)
 			lineStart = pos + 1	
 			indentIgnore = isMultiLineComment or isMultiLineString
 		end
@@ -754,6 +959,12 @@ local function _ColorizeCode()
 	for i=strStart,activePico:LuaLen() do
 		_colors[i] = _rgb.LuaColorControl
 	end
+	
+	for nb = 1,#_lines  do
+		_maxLineWidth = math.max(_maxLineWidth, _FontLineWidth(nb))	
+	end
+	
+	
 end
 
 -- split "#123456" to a rgba-table
@@ -765,6 +976,11 @@ local function _RGBSplit(str)
 		a = 255
 	}
 end
+
+
+--===================================================================
+-----------------------------------------------------------------Menu
+--===================================================================
 
 -- Select the word on the position
 local function _SelectWord(newPos)
@@ -1135,7 +1351,20 @@ local function _GotoStart(text)
 	end
 end
 
+
+--===================================================================
+-----------------------------------------------------------------main
+--===================================================================
+
 -- custom menu
+local _mFont
+local function _MenuZoomSet  (e)
+	config.LuaZoom = math.clamp(1,6,tonumber(e:sub(-1)) or 4)
+	_mFont:SetRadio("luaZoom1", "luaZoom6", e )
+	_FontChoose()
+	m:Resize()
+end
+
 local function _MenuInit()
 	m.menuBar = SDL.Menu.Create()		
 	MenuAddFile(m.menuBar)
@@ -1155,8 +1384,8 @@ local function _MenuInit()
 			if _cursorPos != _cursorPosEnd then
 				local s,e = _cursorPos, _cursorPosEnd
 				if s>e then s,e = e,s end
-				local str = activePico:LuaSub(s,e-1)
-				m:Input(str:lower())
+				local str = activePico:StringPicoToUTF8(activePico:LuaSub(s,e-1))
+				m:Input(str:upper()) -- reversed in pico-8
 				_cursorPos = e
 				_cursorPosEnd = s 
 				_VisibleCursor()
@@ -1169,8 +1398,8 @@ local function _MenuInit()
 			if _cursorPos != _cursorPosEnd then
 				local s,e = _cursorPos, _cursorPosEnd
 				if s>e then s,e = e,s end
-				local str = activePico:LuaSub(s,e-1)
-				m:Input(str:upper())
+				local str = activePico:StringPicoToUTF8(activePico:LuaSub(s,e-1))
+				m:Input(str:lower()) -- reversed in pico-8
 				_cursorPos = e
 				_cursorPosEnd = s 
 				_VisibleCursor()
@@ -1324,13 +1553,29 @@ local function _MenuInit()
 	MenuAdd(mSearch, "luaNextFN", "Next function \t ctrl+down", _NextFunction, "CTRL+DOWN")
 	MenuAdd(mSearch, "luaPrevFN", "Previous function \t ctrl+up", _PreviousFunction, "CTRL+UP")
 	
-	
 	MenuAddPico8(m.menuBar)
+	
+	_mFont = m.menuBar:Add("&Zoom")
+	MenuAdd(_mFont, "LuaFontCustom","Use custom font",
+		function()
+			config.LuaFontCustom = not config.LuaFontCustom
+			_mFont:SetCheck("LuaFontCustom", config.LuaFontCustom)
+			_FontChoose()
+			m:Resize()
+		end
+	)
+	_mFont:Add()
+	for i = 1,6 do
+		MenuAdd(_mFont, "luaZoom"..i, tostring(i), _MenuZoomSet)
+	end
+		
 	MenuAddSettings(m.menuBar)
 	MenuAddDebug(m.menuBar)
 	
 	m.MenuUpdate = function (m,bar)
 		bar:SetCheck("luaPuny", _puny)	
+		bar:SetCheck("LuaFontCustom", config.LuaFontCustom)
+		bar:SetRadio("luaZoom1", "luaZoom6", "luaZoom".. config.LuaZoom )
 	end
 	
 end
@@ -1460,6 +1705,9 @@ function m.Init(m)
 	config.LuaColorMarkBrace = config.LuaColorMarkBrace or "#00FFFF"
 	config.LuaColorMarkBadBrace = config.LuaColorMarkBadBrace or "#FF0000"
 	
+	if config.LuaFontCustom == nil then config.LuaFontCustom = true end
+	config.LuaZoom = config.LuaZoom or 4
+	
 	-- comments for the config
 	configComment.LuaColorBack = "Background color of the source code"
 	configComment.LuaColorControl = "Color for all non-alphanumeric"
@@ -1477,6 +1725,9 @@ function m.Init(m)
 	configComment.LuaColorMarkWord = "Color for selected words"
 	configComment.LuaColorMarkBrace = "Color of the matching brace"
 	configComment.LuaColorMarkBadBrace = "Color for a missing brace"
+	
+	configComment.LuaFontCustom = "Use custom font in lua editor"
+	configComment.LuaZoom = "Zoom level for text in lua editor"
 	
 	-- generate _rgb table
 	for key,value in pairs(config) do
@@ -1559,7 +1810,8 @@ function m.Init(m)
 		_GotoStart(text)
 		_ppLuaGoto:Close()
 	end
-		
+	
+	_FontInit()
 	
 	return true
 end
@@ -1579,7 +1831,9 @@ function m.FocusGained(m)
 	_cursorPos = activePico.userdata_lua_cursorPos or 1
 	_cursorPosEnd = activePico.userdata_lua_cursorPosEnd or 1
 	m.scrollbar.y:SetValues(activePico.userdata_lua_line or 0)
-	m.scrollbar.x:SetValues(activePico.userdata_lua_offset or 0)
+	m.scrollbar.x:SetValues(activePico.userdata_lua_xoffset or 0)
+	
+	_FontChoose()
 end
 
 -- lost focus
@@ -1588,7 +1842,7 @@ function m.FocusLost(m)
 	activePico.userdata_lua_cursorPos = _cursorPos
 	activePico.userdata_lua_cursorPosEnd = _cursorPosEnd
 	activePico.userdata_lua_line = m.scrollbar.y:GetValues()
-	activePico.userdata_lua_offset = m.scrollbar.x:GetValues()
+	activePico.userdata_lua_xoffset = m.scrollbar.x:GetValues()
 	PicoRemoteSFX(-1)
 	PicoRemoteMusic(-1)
 end
@@ -1596,9 +1850,8 @@ end
 -- resize
 function m.Resize(m)
 	local ow, oh = renderer:GetOutputSize()
-	local w2,h2 = SizeText("+",2)
 	local w1,h1 = SizeText("+")
-	
+		
 	_rightSide = 5 + _128Size * 16 + 5, topLimit + 5
 	
 	-- position left side buttons
@@ -1629,7 +1882,7 @@ function m.Resize(m)
 	_rectSourceCode.h = oh - _rectSourceCode.y - 5 - BARSIZE - 5 - h1 - 5
 
 	-- infobar
-	_rectInfobar = {x = _rectSourceCode.x, y = _rectSourceCode.y + _rectSourceCode.h + 5 + BARSIZE + 5 , _rectSourceCode.w, h2}
+	_rectInfobar = {x = _rectSourceCode.x, y = _rectSourceCode.y + _rectSourceCode.h + 5 + BARSIZE + 5 , _rectSourceCode.w, h1}
 
 	-- place scrolbars
 	m.scrollbar.x:SetPos(_rectSourceCode.x, _rectSourceCode.y + _rectSourceCode.h + 5, _rectSourceCode.w, BARSIZE)
@@ -1643,9 +1896,8 @@ function m.Resize(m)
 	_ColorizeCode()
 
 	-- line number
-	_numberWidth = #tostring(#_lines)
-	_numberFormat = "%".._numberWidth.."i"
-	_rectNumber = {x = _rectSourceCode.x, y = _rectSourceCode.y, w = (_numberWidth+1) * w2, h = _rectSourceCode.h}
+	local count = #tostring(#_lines)
+	_rectNumber = {x = _rectSourceCode.x, y = _rectSourceCode.y, w = _FontNumberWidth() * count + 10, h = _rectSourceCode.h}
 	
 	-- text	
 	_rectText = { x = _rectNumber.x + _rectNumber.w, y = _rectNumber.y }
@@ -1653,9 +1905,9 @@ function m.Resize(m)
 	_rectText.h = _rectSourceCode.h - (_rectText.y - _rectSourceCode.y)
 	
 	-- update scrollbars
-	m.scrollbar.y:SetValues(nil, _rectSourceCode.h \ h2, #_lines)	
-	m.scrollbar.x:SetValues(nil, _rectSourceCode.w \ w2 - _numberWidth, _maxLineWidth)
-	m.scrollbar.fnY:SetValues(nil, _rectFunctions.h \ h2, #_functions)	
+	m.scrollbar.y:SetValues(nil, _rectSourceCode.h \ _FontHeight(), #_lines)	
+	m.scrollbar.x:SetValues(nil, _rectSourceCode.w  - _rectNumber.w, _maxLineWidth)
+	m.scrollbar.fnY:SetValues(nil, _rectFunctions.h \ _FontHeight(), #_functions)	
 	
 	-- build a list with all used sfx	
 	_sfxUsedIn = {}
@@ -1678,14 +1930,14 @@ end
 
 -- drawing module
 local _PALETTENAMES = { "Custom palette", "Default palette", "Extended palette" }
+local _oldCLine, _oldCOffset
 function m.Draw(m)
 	--m.Resize(m) -- debug hardcore test!
 	m.scrollbar.fnY.visible = (_leftSideMode == "function")
 	_leftSideSFX = nil
 	_leftSideMusic = nil	
 
-	-- get size
-	local w2,h2 = SizeText("+",2)
+	-- get size	
 	local ow, oh = renderer:GetOutputSize()
 	local leftSideInfo
 	
@@ -1699,8 +1951,7 @@ function m.Draw(m)
 						
 		local line, pageHeight = m.scrollbar.fnY:GetValues()
 		local yy = _rectFunctions.y
-		local maxChar = (_rectFunctions.w - 10) \ w2 + 1
-		
+				
 		-- draw list
 		renderer:SetClipRect( _rectFunctions )
 
@@ -1717,18 +1968,15 @@ function m.Draw(m)
 				
 				-- selection background
 				if fn == _functionSelected then
-					DrawFilledRect({_rectFunctions.x, yy, _rectFunctions.w, h2}, _rgb.LuaColorHighlightLine)
+					DrawFilledRect({_rectFunctions.x, yy, _rectFunctions.w, _FontHeight()}, _rgb.LuaColorHighlightLine)
 				end			
 				
 				-- draw name
 				if fn.name then
-					for pos,char in fn.name:codes(1, maxChar ) do
-						DrawChar2(xx,yy,char, col )
-						xx += w2
-					end
+					_FontDraw(xx,yy,fn.name,col)
 				end
 			end
-			yy += h2
+			yy += _FontHeight()
 		end
 		renderer:SetClipRect( nil )
 		
@@ -1736,6 +1984,9 @@ function m.Draw(m)
 		-- draw sprite or charset
 		local tex = (_leftSideMode == "sprite") and TexturesGetSprite() or TexturesGetCharset()
 		tex:SetBlendMode("NONE")
+		if _leftSideMode == "charset" then
+			tex:SetColorMod(Pico.RGB[7].r,Pico.RGB[7].g,Pico.RGB[7].b)
+		end
 		
 		-- draw texture and border
 		renderer:Copy(tex,nil,_rect128x128)
@@ -1799,6 +2050,7 @@ function m.Draw(m)
 	elseif _leftSideMode == "palette" then
 		-- palette
 		local w1,h1 = SizeText("+")
+		local w2,h2 = SizeText("+",2)
 		local ww = _128SizeBig * 2 + h2
 		local space = (_rect128x128.h - ww * 3)\2 + ww
 		
@@ -1999,7 +2251,7 @@ function m.Draw(m)
 	-- highlight line
 	local cLine,cOffset = _PosToLineOffset(_cursorPos)	
 	renderer:SetClipRect( _rectText )
-	DrawFilledRect({_rectText.x, _rectText.y + (cLine - line - 1) * h2, _rectText.w, h2}, _rgb.LuaColorHighlightLine)
+	DrawFilledRect({_rectText.x, _rectText.y + (cLine - line - 1) * _FontHeight(), _rectText.w, _FontHeight()}, _rgb.LuaColorHighlightLine)
 		
 	-- check if a word is highlighted
 	local cs,ce = _cursorPos, _cursorPosEnd
@@ -2042,17 +2294,22 @@ function m.Draw(m)
 	local yy = _rectSourceCode.y
 	for i = line + 1, line + pageHeight + 1 do
 		if _lines[i] then
-			local xx = _rectSourceCode.x
+			local xx = _rectNumber.x + _rectNumber.w - 5
 			
 			renderer:SetClipRect( _rectSourceCode )
 			
 			-- line number
-			DrawText(xx, yy, string.format(_numberFormat, i),_rgb.LuaColorLinenumber,2)
+			local str = string.format("%i",i)
+			local x = _FontCharSize(str)
+			_FontDraw(xx-x, yy, str,_rgb.LuaColorLinenumber,2)
 						
 			renderer:SetClipRect( _rectText )
-			xx = _rectText.x + 5 - w2 * offset			
+			xx = _rectText.x + 5 - offset			
 			local markNext = 0
 			for pos,char in activePico:LuaCodes(_lines[i].s, _lines[i].e ) do 
+				local wChar,hChar = _FontCharSize(char)
+			
+			
 				if markNext == 0 then
 					-- check if next word matches selected word
 					if char == startByte then 
@@ -2066,12 +2323,12 @@ function m.Draw(m)
 
 				if pos >= cs and pos < ce then
 					-- selected part of source code
-					DrawFilledRect({xx,yy,w2,h2},_rgb.LuaColorMark)
+					DrawFilledRect({xx,yy,wChar,hChar},_rgb.LuaColorMark)
 					markNext = 0
 					
 				elseif markNext > 0 then
 					-- highlight word, because it matches selection		
-					DrawFilledRect({xx,yy,w2,h2},_rgb.LuaColorMarkWord)
+					DrawFilledRect({xx,yy,wChar,hChar},_rgb.LuaColorMarkWord)
 					markNext -= 1
 				end
 				
@@ -2091,20 +2348,21 @@ function m.Draw(m)
 				end
 						
 				-- draw char
-				DrawChar2(xx,yy,char,col)
-				
-				xx += w2
+				xx = _FontDraw(xx,yy,char,col)
+								
 				if xx >= endX then break end				
 			end
 			
 		end	
-		yy += h2
+		yy += _FontHeight()
 	end
 	
 	-- draw blinking cursor
 	local cLine,cOffset = _PosToLineOffset(_cursorPos)	
-	if (SDL.Time.Get()*100) % config.cursorBlink < config.cursorBlink\2 and hasFocus and not popup:HasFocus() then 
-		DrawFilledRect({_rectText.x + 5 + (cOffset - offset - 1) * w2, _rectText.y + (cLine - line - 1) * h2, 2, h2}, _rgb.LuaColorCursor)
+	if (_oldCLine != cLine or _oldCOffset != cOffset or (SDL.Time.Get()*100) % config.cursorBlink < config.cursorBlink\2 ) and hasFocus and not popup:HasFocus() then 
+		local xx = _FontLineWidth(cLine, cOffset -2)
+		DrawFilledRect({_rectText.x + 5 + (xx - offset - 1), _rectText.y + (cLine - line - 1) * _FontHeight(), 2, _FontHeight()}, _rgb.LuaColorCursor)
+		_oldCLine, _oldCOffset = cLine, cOffset		
 	end
 		
 	renderer:SetClipRect(nil)
@@ -2170,21 +2428,20 @@ function m.MouseDown(m, mx, my, mb, clicks)
 	
 	
 	elseif mb == "LEFT" and _leftSideMode == "function" and SDL.Rect.ContainsPoint(_rectFunctions, {mx, my}) then
-		local w2,h2 = SizeText("+",2)
 		local line, pageHeight = m.scrollbar.fnY:GetValues()
-		local cLine = (my - _rectFunctions.y) \ h2 + line + 1
+		local cLine = (my - _rectFunctions.y) \ _FontHeight() + line + 1
 		if cLine > 0 and cLine <= #_functions then
 			_cursorPosEnd = _functions[cLine].posStart 
 			_cursorPos = _functions[cLine].posEnd + 1
 			_VisibleCursor()
 		end
 	
-	elseif mb == "LEFT" and SDL.Rect.ContainsPoint(_rectText, {mx, my}) then
-		local w2,h2 = SizeText("+",2)
+	elseif mb == "LEFT" and SDL.Rect.ContainsPoint(_rectText, {mx, my}) then		
 		local line, pageHeight = m.scrollbar.y:GetValues()
 		local offset, pageWidth = m.scrollbar.x:GetValues()
-		local cLine = math.clamp( (my - _rectText.y) \ h2 + line + 1, 1, #_lines)
-		local cOffset = math.clamp( (mx - _rectText.x - 5) \ w2 + offset + 1, 1, _lines[cLine].e - _lines[cLine].s + 1)
+		local cLine = math.clamp( (my - _rectText.y) \ _FontHeight() + line + 1, 1, #_lines)
+		local xx = _FontLineWidth( cLine, nil, mx - _rectText.x + offset) 		
+		local cOffset = math.clamp( xx - _lines[cLine].s + 1, 1, _lines[cLine].e - _lines[cLine].s + 1)
 		local newPos = _LineOffsetToPos(cLine, cOffset)
 		
 		if clicks > 1 then 
@@ -2211,9 +2468,8 @@ function m.MouseDown(m, mx, my, mb, clicks)
 		_VisibleCursor()
 		
 	elseif mb == "LEFT" and SDL.Rect.ContainsPoint(_rectNumber, {mx, my}) then
-		local w2,h2 = SizeText("+",2)
 		local line, pageHeight = m.scrollbar.y:GetValues()
-		local cLine = math.clamp( (my - _rectNumber.y) \ h2 + line + 1, 1, #_lines)
+		local cLine = math.clamp( (my - _rectNumber.y) \ _FontHeight() + line + 1, 1, #_lines)
 		_cursorPos = _lines[cLine].e
 		_cursorPosEnd = _lines[cLine].s
 		_selectLineStart = cLine
@@ -2227,18 +2483,17 @@ end
 
 function m.MouseMove(m, mx, my, mb)
 	if _mouseLock == "selectCursor" and SDL.Rect.ContainsPoint(_rectText, {mx, my}) then
-		local w2,h2 = SizeText("+",2)
 		local line, pageHeight = m.scrollbar.y:GetValues()
 		local offset, pageWidth = m.scrollbar.x:GetValues()
-		local cLine = math.clamp( (my - _rectText.y) \ h2 + line + 1, 1, #_lines)
-		local cOffset = math.clamp( (mx - _rectText.x - 5) \ w2 + offset + 1, 1, _lines[cLine].e - _lines[cLine].s + 1)
+		local cLine = math.clamp( (my - _rectText.y) \ _FontHeight() + line + 1, 1, #_lines)
+		local xx = _FontLineWidth( cLine, nil, mx - _rectText.x + offset) 		
+		local cOffset = math.clamp( xx - _lines[cLine].s + 1, 1, _lines[cLine].e - _lines[cLine].s + 1)
 		_cursorPos = _LineOffsetToPos(cLine, cOffset)	
 		_VisibleCursor()
 		
 	elseif _mouseLock == "selectLine" and SDL.Rect.ContainsPoint(_rectNumber, {mx, my}) then
-		local w2,h2 = SizeText("+",2)
 		local line, pageHeight = m.scrollbar.y:GetValues()
-		local cLine = math.clamp( (my - _rectNumber.y) \ h2 + line + 1, 1, #_lines)
+		local cLine = math.clamp( (my - _rectNumber.y) \ _FontHeight() + line + 1, 1, #_lines)
 		if cLine < _selectLineStart then
 			_cursorPos = _lines[cLine].s
 			_cursorPosEnd = _lines[_selectLineStart].e		
@@ -2265,18 +2520,25 @@ end
 
 function m.MouseWheel(m, wx, wy, mx, my)
 	-- mousewheel is moved by wx,wy - on mouseposition mx,my
-	if SDL.Rect.ContainsPoint(_rectSourceCode, {mx, my}) then
-		local pos = m.scrollbar.y:GetValues()
-		m.scrollbar.y:SetValues( pos - wy)
-		local pos = m.scrollbar.x:GetValues()
-		m.scrollbar.x:SetValues( pos + wx)
-	end
 	
-	if SDL.Rect.ContainsPoint(_rectFunctions, {mx, my}) then
-		local pos = m.scrollbar.fnY:GetValues()
-		m.scrollbar.fnY:SetValues( pos - wy)
-	end
+	if SDL.Keyboard.GetModState():hasflag("CTRL") > 0 then
+		wy = math.clamp(-1,1,wy)	
+		config.LuaZoom = math.clamp( config.LuaZoom + wy, 1, 6)
+		_MenuZoomSet("luaZoom"..config.LuaZoom)
 		
+	else
+		if SDL.Rect.ContainsPoint(_rectSourceCode, {mx, my}) then
+			local pos = m.scrollbar.y:GetValues()
+			m.scrollbar.y:SetValues( pos - wy)
+			local pos = m.scrollbar.x:GetValues()
+			m.scrollbar.x:SetValues( pos + wx)
+		end
+		
+		if SDL.Rect.ContainsPoint(_rectFunctions, {mx, my}) then
+			local pos = m.scrollbar.fnY:GetValues()
+			m.scrollbar.fnY:SetValues( pos - wy)
+		end
+	end
 	
 end
 

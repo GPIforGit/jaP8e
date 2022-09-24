@@ -5,7 +5,7 @@ local m = {
 	name = "LZW", 
 	sort = 90, 
 }
-table.insert(modules, m)
+--table.insert(modules, m) -- disabled!
 
 
 local _writeAdr = 0x8000 -- where to place the packed data

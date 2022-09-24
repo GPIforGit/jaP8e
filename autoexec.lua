@@ -1,6 +1,15 @@
+
 --[[ todo
 
 	changelog
+		v9.92
+			* luatik - two executables - luatik.com for consoles and luatik.exe for windows
+			* fillp - new Module - easy editing of fill patterns.
+			* new dither option
+			* lua - zoomable text and you can choose between the custom font and the build in font
+			* lua - build in font now inverts lower/upper case (like the custom font)
+			* main - Update charset.png - chars over 127 will now double wide in lua-editor
+			
 		v0.91
 			* lzh - fix bug where lzh pack to 0 instead of base adr.
 			* main - stop spaming empty lines while running a p8
@@ -12,7 +21,7 @@
 			* main - jaP8e is now a windows application. In Debug-Menu you can open a console.
 			* main - remove link and start.bat, add a "starter"-execute
 			* main - new icon :)
-			
+						
 		
 	
 	[gfx]0808000000000888888088888888888ffff888f1ff1808fffff00033330000700700[/gfx]
@@ -72,7 +81,7 @@ cursorHand = nil
 -- some constants
 
 TITLE = "jaP8e"
-VERSION = "0.91 BETA"
+VERSION = "0.92 BETA"
 -- min size of the main window
 MINHEIGHT = 667
 MINWIDTH = 1306
@@ -188,6 +197,7 @@ config = {
 	doRemote = false, -- allow pico remote
 	jpgQuality = 90, -- exported jpg quality
 	doDithering = false, -- dither imported images
+	doDitheringFloydSteinberg = false, -- use Floyd-Steinberg for dithering
 	doColorOptimization = false, -- choose best matching colors for imported images
 	doGreyScale = false, -- greyscale image before importing
 	saveTransparentBlack = false, -- save color 0/black as transparent
@@ -197,6 +207,7 @@ config = {
 	writeProtectedPico8 = true, -- while running white protect editor
 	sizeAsHex = true, -- display size values as hex or dezimal
 	debug = false,
+	
 }
 
 -- comments in the config file, when the parameter doesn't exist
@@ -206,6 +217,7 @@ configComment = {
 	doRemote = "use Pico-8 for sound playback",
 	jpgQuality = "Quality of the JPG from 0-100",
 	doDithering = "Dither imported images",
+	doDitheringFloydSteinberg = "when dithering, use Floyd-Steinberg",
 	doColorOptimization = "Create a custom palette for imported sprite sheets",
 	doGreyScale = "Convert Image to B/W before importing",
 	saveTransparentBlack = "Should black transparent in exported images?" ,
@@ -366,7 +378,7 @@ function DrawInit()
 	_, _, _drawRectCharSource.w, _drawRectCharSource.h = _drawTextureChar:Query()
 	_drawRectCharSource.w \= 16
 	_drawRectCharSource.h \= 16
-	_drawRectChar.w = _drawRectCharSource.w
+	_drawRectChar.w = _drawRectCharSource.w \ 2
 	_drawRectChar.h = _drawRectCharSource.h
 	
 	-- load big characterset
@@ -375,7 +387,7 @@ function DrawInit()
 	_, _, _drawRectChar2Source.w, _drawRectChar2Source.h = _drawTextureChar2:Query()
 	_drawRectChar2Source.w \= 16
 	_drawRectChar2Source.h \= 16
-	_drawRectChar2.w = _drawRectChar2Source.w
+	_drawRectChar2.w = _drawRectChar2Source.w \ 2
 	_drawRectChar2.h = _drawRectChar2Source.h
 			
 	-- color-textures
@@ -475,14 +487,25 @@ function DrawHex(x,y,value,col,count)
 end
 
 -- draw a Char
-function DrawChar2(x,y,char,col)
-	if char == 32 or char==nil or char == 9 or char == 0xa then return end
-	_drawRectChar2.x = x
-	_drawRectChar2.y = y	
-	_drawRectChar2Source.x = _drawRectChar2Source.w * (char & 0xf)
-	_drawRectChar2Source.y = _drawRectChar2Source.h * (char >> 4)
-	_drawTextureChar2:SetColorMod(col.r,col.g,col.b)
-	renderer:Copy(_drawTextureChar2,_drawRectChar2Source,_drawRectChar2)
+function DrawChar(x,y,char,col,zoom,f)
+	local _rect = f == 1 and _drawRectCharSource or _drawRectChar2Source
+	local _tex = f == 1 and _drawTextureChar or _drawTextureChar2
+
+	_tex:SetScaleMode(zoom<1 and "BEST" or "NEAREST")
+
+	local w,h = _rect.w , _rect.h 
+	
+	if char < 0x80 then
+		w /= 2
+	end	
+	
+	if not (char == 32 or char==nil or char == 9 or char == 0xa) then
+		_rect.x = _rect.w * (char & 0xf)
+		_rect.y = _rect.h * (char >> 4)
+		_tex:SetColorMod(col.r,col.g,col.b)
+		renderer:Copy(_tex,{_rect.x, _rect.y, w, _rect.h},{x,y, w * zoom ,h * zoom})
+	end
+	return x + w * zoom, y + h * zoom
 end
 
 -- draw a text
@@ -508,7 +531,6 @@ function DrawText(x,y,text,col,size)
 	rect.x = x \ 1
 	rect.y = y \ 1	
 	
-	tex:SetScaleMode("LINEAR")
 	tex:SetBlendMode("BLEND")
 	tex:SetColorMod(col.r,col.g,col.b)
 	
@@ -525,8 +547,9 @@ function DrawText(x,y,text,col,size)
 			if char != 32 and char != 9 then
 				rectSrc.x = rectSrc.w * (char & 0xf)
 				rectSrc.y = rectSrc.h * (char >> 4)
-				
-				renderer:Copy(tex,rectSrc,rect)
+				local w = char >= 0x80 and rectSrc.w or rectSrc.w\2
+								
+				renderer:Copy(tex,{rectSrc.x, rectSrc.y, w, rectSrc.h},rect)
 			end
 			
 			rect.x += rect.w
@@ -545,9 +568,9 @@ function SizeText(text,size)
 	text = tostring(text)
 	local rectSrc	
 	if size == nil or size == 1 then
-		rectSrc = _drawRectCharSource
+		rectSrc = _drawRectChar
 	else
-		rectSrc = _drawRectChar2Source
+		rectSrc = _drawRectChar2
 	end
 	
 	if text:find("\n") then	
@@ -701,7 +724,12 @@ function FilesOpen(file)
 	end
 	
 	-- new tab needed?
-	if _filesActive == nil or not activePico:IsEmpty() then FilesNew() doRemoveOnError = true end
+	if _filesActive == nil or not activePico:IsEmpty() then 
+		FilesNew() 
+		doRemoveOnError = true 
+	end
+	
+	ModulesCall("FocusLost")
 	
 	local ok, err 
 	
@@ -733,17 +761,21 @@ function FilesOpen(file)
 		
 		-- set save-point and resize everything
 		activePico:SetSaved()
-		MainWindowResize()
+		ModulesCall("FocusGained")		
+		MainWindowResize()		
+		
 		return true
 		
 	else
 		-- something went wrong!
-		SDL.Request.Message(window,TITLE,"Can't load.\n"..err,"OK STOP")
+		SDL.Request.Message(window,TITLE,"Can't load.\n"..err,"OK STOP")		
+		ModulesCall("FocusGained")
+		
 		if doRemoveOnError then
 			-- possible that the file was partly loaded, make sure that it will be removed
 			activePico:SetSaved() 
 			FilesRemove()
-		end
+		end		
 		return false
 	end
 end
@@ -1770,35 +1802,124 @@ function SurfaceGetPico8Image(surface, colconv, colrgb, doColor)
 
 	local out = {}
 	if config.doDithering then
-		-- dither-code		
-		
-		-- update pixel with an bias
-		local update = function(x, y, r, g, b, bias)
-			adr = x.."x"..y
-			if pic[adr] then
-				pic[adr].r = math.clamp(0, 255, pic[adr].r + r * bias)
-				pic[adr].g = math.clamp(0, 255, pic[adr].g + g * bias)
-				pic[adr].b = math.clamp(0, 255, pic[adr].b + b * bias)
+		-- dither-code
+		local dither		
+		if config.doDitheringFloydSteinberg then
+			-- update pixel with an bias
+			local update = function(x, y, r, g, b, bias)
+				adr = x.."x"..y
+				if pic[adr] then
+					pic[adr].r = math.clamp(0, 255, pic[adr].r + r * bias)
+					pic[adr].g = math.clamp(0, 255, pic[adr].g + g * bias)
+					pic[adr].b = math.clamp(0, 255, pic[adr].b + b * bias)
+				end
 			end
-		end
 
-		local dither = function(x,y)
-			-- get the nearest color
-			local adr = x.."x"..y
-			local col = colconv( pic[adr].r, pic[adr].g, pic[adr].b )
+			dither = function(x,y)
+				-- get the nearest color
+				local adr = x.."x"..y
+				local col = colconv( pic[adr].r, pic[adr].g, pic[adr].b )
+				
+				-- calculate the error
+				local er, eg, eb = colrgb(col)
+				er = pic[adr].r - er
+				eg = pic[adr].g - eg
+				eb = pic[adr].b - eb
+				
+				-- update neighboring pixels
+				update(x + 1, y    , er, eg, eb, 7.0 / 16.0)
+				update(x - 1, y + 1, er, eg, eb, 3.0 / 16.0)
+				update(x    , y + 1, er, eg, eb, 5.0 / 16.0)
+				update(x + 1, y + 1, er, eg, eb, 1.0 / 16.0)
+				return col
+			end
+		else
+			local colors = {}
 			
-			-- calculate the error
-			local er, eg, eb = colrgb(col)
-			er = pic[adr].r - er
-			eg = pic[adr].g - eg
-			eb = pic[adr].b - eb
+			local ColorsAdd = function (f1,f2, c1r,c1g,c1b, c2r,c2g,c2b, pat, col1, col2)
+				table.insert(colors, {
+					r = (c1r * f1 + c2r * f2) \ (f1+f2),
+					g = (c1g * f1 + c2g * f2) \ (f1+f2),
+					b = (c1b * f1 + c2b * f2) \ (f1+f2),
+					pat = pat,
+					c1 = col1,
+					c2 = col2
+				})
+			end
 			
-			-- update neighboring pixels
-			update(x + 1, y    , er, eg, eb, 7.0 / 16.0)
-			update(x - 1, y + 1, er, eg, eb, 3.0 / 16.0)
-			update(x    , y + 1, er, eg, eb, 5.0 / 16.0)
-			update(x + 1, y + 1, er, eg, eb, 1.0 / 16.0)
-			return col
+			for c1 = 0, 15 do
+				local c1rx, c1gx, c1bx = colrgb(c1)
+				local c1hx = c1rx * 0.299 + c1gx * 0.587 + c1bx * 0.144
+				
+				for c2 = c1, 15 do
+				
+					if c1 == c2 then
+						ColorsAdd(1,1, c1rx,c1gx,c1bx, c1rx,c1gx,c1bx, 0xffff, c1,c1)
+						
+					else
+						local col1, col2 = c1, c2
+						local c1r, c1g, c1b, c1h = c1rx, c1gx, c1bx, c1hx
+					
+						local c2r, c2g, c2b = colrgb(c2)
+						local c2h = c2r * 0.299 + c2g * 0.587 + c2b * 0.144
+						
+						if c1h < c2h then
+							c1r, c1g, c1b, c1h, c2r, c2g, c2b, c2h = c2r, c2g, c2b, c2h, c1r, c1g, c1b, c1h
+							col1,col2 = col2,col1
+						end
+						
+						local dr,dg,db = c1r - c2r, c1g - c2g, c1b - c2b
+						local a = dr*dr * 0.299 + dg*dg * 0.587 + db*db * 0.144
+						if  a < 100*100*3 then
+							--ColorsAdd( 1,15, c1r,c1g,c1b, c2r,c2g,c2b, 0x8000, col1,col2)
+							--ColorsAdd( 2,14, c1r,c1g,c1b, c2r,c2g,c2b, 0x8020, col1,col2)
+							--ColorsAdd( 3,13, c1r,c1g,c1b, c2r,c2g,c2b, 0xa020, col1,col2)
+							--ColorsAdd( 4,12, c1r,c1g,c1b, c2r,c2g,c2b, 0xa0a0, col1,col2)
+							--ColorsAdd( 5,11, c1r,c1g,c1b, c2r,c2g,c2b, 0xa4a0, col1,col2)
+							--ColorsAdd( 6,10, c1r,c1g,c1b, c2r,c2g,c2b, 0xa4a1, col1,col2)
+							--ColorsAdd( 7, 9, c1r,c1g,c1b, c2r,c2g,c2b, 0xa5a1, col1,col2)
+							ColorsAdd( 8, 8, c1r,c1g,c1b, c2r,c2g,c2b, 0xa5a5, col1,col2)
+							--ColorsAdd( 9, 7, c1r,c1g,c1b, c2r,c2g,c2b, 0xe5a5, col1,col2)
+							--ColorsAdd(10, 6, c1r,c1g,c1b, c2r,c2g,c2b, 0xe5b5, col1,col2)
+							--ColorsAdd(11, 5, c1r,c1g,c1b, c2r,c2g,c2b, 0xf5b5, col1,col2)
+							--ColorsAdd(12, 4, c1r,c1g,c1b, c2r,c2g,c2b, 0xf5f5, col1,col2)
+							--ColorsAdd(13, 3, c1r,c1g,c1b, c2r,c2g,c2b, 0xfdf5, col1,col2)
+							--ColorsAdd(14, 2, c1r,c1g,c1b, c2r,c2g,c2b, 0xfdf7, col1,col2)
+							--ColorsAdd(15, 1, c1r,c1g,c1b, c2r,c2g,c2b, 0xfff7, col1,col2)
+							
+						end
+					end
+				end
+			end
+	
+			
+			
+			dither = function(x, y)
+				local adr = x.."x"..y
+				local pr,pg,pb = pic[adr].r, pic[adr].g, pic[adr].b 
+				local best, choosen 
+				
+				for nb, col in pairs(colors) do
+					--table.debug(col)
+					local dr,dg,db = pr - col.r, pg - col.g, pb - col.b
+					local a = dr*dr * 0.299 + dg*dg * 0.587 + db*db * 0.144
+			
+					if not best or best > a or (best == a and col.c1 == col.c2) then
+						choosen = col
+						best = a
+					end
+				end
+				
+				local i = (x % 4) + (y % 4)*4
+				if 1<<i & choosen.pat != 0 then
+					return choosen.c1
+				else
+					return choosen.c2
+				end
+			
+			end
+			
+					
 		end
 		
 		-- dither all pixels
@@ -1877,6 +1998,7 @@ function MenuAdd(parent, id, text, f, key)
 	end
 	parent:Add(text,id)
 	_menuEntries[id] = {OnClick = f, key = k, ctrl = (m1 == "CTRL" or m2 == "CTRL"), shift = (m1 == "SHIFT" or m2 == "SHIFT"), alt = (m1 == "ALT" or m2 == "ALT")}
+	return _menuEntries[id]
 end
 
 -- Call a menu entry
@@ -2222,16 +2344,17 @@ function MenuAddSettings(bar)
 	MenuAdd(mSettings, "doDithering", "use dithering",
 		function (e)
 			config.doDithering = not config.doDithering
-			if config.doDithering then
-				PicoRemoteStart()
-			else
-				PicoRemoteStop()
-			end			
-			
 			_menuActive:SetCheck("doDithering", config.doDithering)
 		end
 	)
 	
+	MenuAdd(mSettings, "doDitheringFloydSteinberg", "  use Floyd-Steinberg for dithering",
+		function(e)
+			config.doDitheringFloydSteinberg = not config.doDitheringFloydSteinberg
+			_menuActive:SetCheck("doDitheringFloydSteinberg", config.doDitheringFloydSteinberg)
+		end
+	)			
+			
 	MenuAdd(mSettings, "doColorOptimization", "optimize color palette when importing spritesheet",
 		function (e)
 			config.doColorOptimization = not config.doColorOptimization
@@ -2297,6 +2420,7 @@ function MenuActivate(bar)
 	_menuActive:SetCheck("writeProtectedPico8", config.writeProtectedPico8)
 	_menuActive:SetCheck("sizeAsHex", config.sizeAsHex)
 	_menuActive:SetCheck("debugmsg",config.debug)
+	_menuActive:SetCheck("doDitheringFloydSteinberg", config.doDitheringFloydSteinberg)
 	MenuSetZoom()
 	-- call module-menu-update
 	ModulesCall("MenuUpdate",_menuActive)
