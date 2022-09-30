@@ -2,7 +2,7 @@
 
 	Character-Creation
 	
-	CTRL + LMB in charset -- Exchange Character
+	CTRL + LMB in font -- Exchange Character
 	
 	CTRL + C -- copy character as print-string for pico8
 	CTRL + V -- paste charater from print-string
@@ -13,7 +13,7 @@
 
 modules = modules or {}
 local m = {
-	name = "Charset",
+	name = "Font",
 	sort = 70,	
 }
 table.insert(modules, m)
@@ -375,6 +375,10 @@ end
 
 -- paste to clipboard
 function m.Paste(m, str)
+	if str:sub(1,1) == "\"" and str:sub(-1,-1) == "\"" then
+		str = str:sub(2,-2)
+	end
+
 	if str:sub(1,3) == "\\^:" then
 		local c = overArea.copy.icon.a[1][1]
 		if c <= 0 or c > 255 then return nil end

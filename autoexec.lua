@@ -2,7 +2,18 @@
 --[[ todo
 
 	changelog
-		v9.92
+		
+		v0.93
+			* lua - fix background bug
+			* lua - display width of the selected text in pixels. 
+			* lua - coloring-bug with "\\\\"
+			* hex/font - remove double quotes on pasted strings
+			* hex - add font settings / chars under ram
+			* main - renamed charset to font
+			* main - workaround for a bug in sdl2 with the right alt/gr-key in german keyboard layout
+			* main - when you save a cart in pico-89 with "save @clip" you can past it now in jaP8e
+		
+		v0.92
 			* luatik - two executables - luatik.com for consoles and luatik.exe for windows
 			* fillp - new Module - easy editing of fill patterns.
 			* new dither option
@@ -81,7 +92,7 @@ cursorHand = nil
 -- some constants
 
 TITLE = "jaP8e"
-VERSION = "0.92 BETA"
+VERSION = "0.93 BETA"
 -- min size of the main window
 MINHEIGHT = 667
 MINWIDTH = 1306
@@ -715,7 +726,7 @@ function FilesNew()
 end
 
 -- open a file in the current or new tab
-function FilesOpen(file)
+function FilesOpen(file, forcepng)
 	local doRemoveOnError = false
 	
 	if file == nil then
@@ -737,7 +748,7 @@ function FilesOpen(file)
 	extension = extension:upper()
 	
 	-- load the file depending on the extension
-	if extension == ".P8.PNG" or extension == ".PNG" then
+	if extension == ".P8.PNG" or extension == ".PNG" or forcepng then
 		ok,err = activePico:LoadP8PNG(file)
 	elseif extension == ".ROM" or extension == ".P8.ROM" then
 		ok,err = activePico:LoadRom(file)
@@ -2058,9 +2069,9 @@ function MenuAddFile(bar)
 			SurfaceSave(surfaceCache128x128, file)
 		end
 	)
-	MenuAdd(mExport, "export_charset", "Charset image",
+	MenuAdd(mExport, "export_charset", "Font image",
 		function (e)
-			local file = RequestSaveFile(window, "Export charset image", "charset.png", FILEFILTERIMAGE)
+			local file = RequestSaveFile(window, "Export font image", "font.png", FILEFILTERIMAGE)
 			if file == nil then return false end
 			data,pitch = SurfaceLock( surfaceCache128x128 )
 			activePico:CharsetRender(data,pitch)
@@ -2107,9 +2118,9 @@ function MenuAddFile(bar)
 			
 		end
 	)
-	MenuAdd(mImport, "import_Charset", "Charset image",
+	MenuAdd(mImport, "import_Charset", "Font image",
 		function (e)
-			local file = RequestOpenFile(window, "Import charset image", "charset.png", FILEFILTERIMAGE)
+			local file = RequestOpenFile(window, "Import font image", "font.png", FILEFILTERIMAGE)
 			if file == nil then return false end
 			
 			ImageLoadCharset(file)			
@@ -2228,7 +2239,27 @@ function MenuAddEdit(bar)
 		function (e)
 			if SDL.Clipboard.HasText() then 
 				local str = SDL.Clipboard.GetText()
-				if popup:HasFocus() then
+				if str:sub(1,6) == "[cart]" and str:sub(-7) == "[/cart]" then
+					-- a cart has been pasted
+					
+					-- create a temp file
+					local name = os.tmpname()
+					local fin = io.open(name,"w+b")
+					if fin then
+						str = str:sub(7,-8)
+						for i = 1,#str,2 do
+							fin:write( string.char(tonumber("0x" .. str:sub(i,i+1)) or 0) )
+						end						
+						fin:close()
+						
+						-- load temp file as png
+						FilesOpen(name, true)
+						
+						-- and remove it
+						os.remove(name)
+					end
+				
+				elseif popup:HasFocus() then
 					popup:Paste(str)
 				elseif not ModulesCallSub("inputs", "Paste", str) then 
 					ModulesCall("Paste", str)
@@ -2315,7 +2346,7 @@ function MenuAddZoom(bar)
 		)
 	end
 	menuZoom:Add()
-	MenuAdd(menuZoom, "autooverviewzoom", "Automatic zoom on sprite/charset/label",
+	MenuAdd(menuZoom, "autooverviewzoom", "Automatic zoom on sprite/font/label",
 		function (e)
 			config.doAutoOverviewZoom = not config.doAutoOverviewZoom
 			_menuActive:SetCheck("autooverviewzoom", config.doAutoOverviewZoom)
@@ -2836,6 +2867,9 @@ function Init()
 		surface:Free()
 	end
 	
+	--SDL.Event.State( "DROPFILE", "ENABLE" )
+	--SDL.Event.State( "DROPTEXT", "ENABLE" )
+	
 	-- Renderer
 	renderer = SDL.Render.Create(window, -1, "ACCELERATED PRESENTVSYNC TARGETTEXTURE")
 	if renderer == nil then
@@ -3069,7 +3103,7 @@ function main()
 			elseif ev.type == "KEYDOWN" then
 				--PrintDebug ("----- EVENT: "..tostring(ev.type).." -----")
 				--table.debug(ev)
-				--PrintDebug("down",ev.sym, ev.scancode, ev.mod)	
+				--print("down",ev.sym, ev.scancode, ev.mod)	
 				 -- a message requester can filter a keyup!
 		
 				-- here first check, if a menu shortcut has pressed
@@ -3087,7 +3121,13 @@ function main()
 				end
 					
 			elseif ev.type == "KEYUP" then
-				--PrintDebug("up",ev.sym, ev.scancode, ev.mod)	
+				--print("up",ev.sym, ev.scancode, ev.mod)	
+				if ev.sym == "RALT" then
+					-- bug with german keyboard - lctrl is not released!
+					-- so we force all keys to released after the right alt key 
+					SDL.Keyboard.Reset()
+				end
+				
 				-- first check, if popup handle the event, then the next...				
 				if not SecureCall(popup.KeyUp, popup, ev.sym, ev.scancode, ev.mod) then
 					if not ModulesCallSub("inputs", "KeyUp", ev.sym, ev.scancode, ev.mod) then
@@ -3103,7 +3143,10 @@ function main()
 						ModulesCall("Input", ev.text) 
 					end
 				end
-				
+			
+			elseif ev.type == "DROPFILE" then
+				print("DROPFILE")
+				table.debug(ev)
 				
 			--[[
 			elseif ev.type != nil then

@@ -231,8 +231,15 @@ function m.Init(m)
 	b = m.buttons:Add("Free", "Free", size)
 	b.userdata = {Pico.FREEMEM,Pico.FREEMEMLEN}
 	
-	b = m.buttons:Add("CHARSET", "Charset",size)
+	b = m.buttons:Add("CHARSET", "Custom Font",size)
 	b.userdata = {Pico.CHARSET,Pico.CHARSETLEN}
+	
+	b = m.buttons:Add("charOpt","Settings",size2)
+	b.userdata = {Pico.CHARSET, 8 * 16}
+	
+	b = m.buttons:Add("charAll","Chars",size2)
+	b.userdata = {Pico.CHARSET + 8*16, 8*(256-16)}
+		
 	
 	b = m.buttons:Add("PAL", "Palette",size)
 	b.userdata = {Pico.PAL    ,Pico.PALLEN}
@@ -404,7 +411,10 @@ function m.Resize(m)
 	-- ram buttons
 	m.buttons.Free:SetDown(5)	
 	m.buttons.CHARSET:SetDown(1)
-	m.buttons.PAL:SetDown(1)
+	b = m.buttons.charOpt:SetDown(1)
+	m.buttons.charAll:SetRight(1)
+	
+	m.buttons.PAL:SetDown(b,1)
 	m.buttons.LABEL:SetDown(1)	
 	m.buttons.MAPsettings:SetDown(1)
 	
@@ -699,6 +709,10 @@ end
 
 -- paste clipboard into memory
 function m.Paste(m, str)
+	if str:sub(1,1) == "\"" and str:sub(-1,-1) == "\"" then
+		str = str:sub(2,-2)
+	end
+
 	if str:sub(1,3) == "\\^@" then
 
 		local adr,size = math.min(_cursorEnd, _cursor), math.abs(_cursor - _cursorEnd) + 1

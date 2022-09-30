@@ -88,6 +88,18 @@ local function _FontInit()
 	table.sort(_fontOwnList, function(a,b) return a.w < b.w end )	
 end
 
+local function _FontPixelSize(s,e)
+	if s > e then s,e = e,s end
+	local lw, hw, h = activePico:Peek(Pico.CHARSET) , activePico:Peek(Pico.CHARSET+1), activePico:Peek(Pico.CHARSET+2)
+	local adjEnable = (activePico:Peek(Pico.CHARSET + 5) & 1) == 1
+	local w = 0
+	for pos,char in activePico:LuaCodes(s,e-1) do
+		local offx, oneup = activePico:CharsetGetVariable(char)
+		w += (char < 0x80 and lw or hw) + (adjEnable and offx or 0)	
+	end
+	return w
+end
+
 local function _FontChoose()
 	if config.LuaFontCustom then
 		local lw,hw
@@ -526,7 +538,7 @@ local function _ColorizeCode()
 		
 		if isDQuote then
 			typ = 34
-			if code == 92 then
+			if code == 92 and not ignoreNext then
 				-- escape
 				ignoreNext = true
 		
@@ -546,7 +558,7 @@ local function _ColorizeCode()
 			
 		elseif isQuote then
 			typ = 39
-			if code == 92 then
+			if code == 92 and not ignoreNext then
 				-- escape
 				ignoreNext = true
 		
@@ -1612,7 +1624,7 @@ function m.Init(m)
 	b.shrinkOnDeselected = true
 	b.OnClick = ls_update
 	
-	b = m.buttons:Add("ls_charset", "Charset",nil,nil, "leftSide")
+	b = m.buttons:Add("ls_charset", "Font",nil,nil, "leftSide")
 	b.index = "charset"
 	b.shrinkOnDeselected = true
 	b.OnClick = ls_update
@@ -1983,9 +1995,13 @@ function m.Draw(m)
 	elseif _leftSideMode == "sprite" or _leftSideMode == "charset" then
 		-- draw sprite or charset
 		local tex = (_leftSideMode == "sprite") and TexturesGetSprite() or TexturesGetCharset()
-		tex:SetBlendMode("NONE")
+		
 		if _leftSideMode == "charset" then
 			tex:SetColorMod(Pico.RGB[7].r,Pico.RGB[7].g,Pico.RGB[7].b)
+			tex:SetBlendMode("BLEND")
+			DrawFilledRect(_rect128x128,COLBLACK,nil,true)
+		else
+			tex:SetBlendMode("NONE")
 		end
 		
 		-- draw texture and border
@@ -2372,7 +2388,8 @@ function m.Draw(m)
 	local line2,offset2 = _PosToLineOffset(_cursorPosEnd)
 	local str = string.format("length: %i / 65535  lines: %i  cursor: %ix%i  ", activePico:LuaLen(), #_lines, offset, line)
 	if _cursorPos != _cursorPosEnd then
-		str ..= string.format("selection: %i / %i", math.abs(_cursorPos - _cursorPosEnd), math.abs(line-line2) +1)
+		local px = _FontPixelSize(_cursorPos, _cursorPosEnd)
+		str ..= string.format("selection: %i x %i / %ipx", math.abs(_cursorPos - _cursorPosEnd), math.abs(line-line2) +1, px)
 	else
 		str ..= string.format("position: %i",_cursorPos)
 	end
