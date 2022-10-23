@@ -121,6 +121,18 @@ function _EnableLabelEditing()
 		overArea.buttons["Color"..i].visible = true
 	end
 	
+	if overArea.copy.icon.charEnd >= 0 then
+		overArea.buttons.AreaFlipX.visible = true
+		overArea.buttons.AreaFlipY.visible = true
+		if overArea.cellRect.w == overArea.cellRect.h then 
+			overArea.buttons.AreaTurnLeft.visible = true
+			overArea.buttons.AreaTurnRight.visible = true
+		end
+		overArea.buttons.AreaShiftLeft.visible = true
+		overArea.buttons.AreaShiftRight.visible = true
+		overArea.buttons.AreaShiftUp.visible = true
+		overArea.buttons.AreaShiftDown.visible = true
+	end
 
 end
 
@@ -136,6 +148,9 @@ function m.Init(m)
 	m.buttons = overArea.buttons
 	m.inputs = overArea.inputs
 	m.scrollbar = overArea.scrollbar
+	m.shortcut = overArea.shortcut
+	
+
 	return true
 end
 
@@ -241,6 +256,25 @@ end
 -- wheel to zoom
 function m.MouseWheel(m,x,y,mx,my)
 	MenuRotateZoom(y > 0) 
+end
+
+
+function m.SelectAll(m)
+	overArea.copy.icon.char = 0
+	overArea.copy.icon.charEnd = 255
+	overArea:CreateListCopyIconA()
+end
+
+-- copy complete label to hex
+function m.CopyHex(m)
+	local adr,size = Pico.LABEL, Pico.LABELLEN
+	return moduleHex:API_CopyHex(adr,size)
+end
+
+-- paste complete label 
+function m.PasteHex(m,str)
+	local adr,size = Pico.LABEL, Pico.LABELLEN
+	return moduleHex:API_PasteHex(str,adr,size)
 end
 
 return m

@@ -108,6 +108,23 @@ local function _ToolPoint(preview,xx,yy)
 	return true
 end
 
+-- replace - tool
+local function _ToolReplace(preview,x,y)
+	_drawPointList = {}
+	
+	-- which color should be overwritten
+	local col = overArea.AreaGet(x,y)
+	
+	for yy = overArea.cellRect.y, overArea.page.h + overArea.cellRect.y - 1 do
+		for xx = overArea.cellRect.x, overArea.page.w + overArea.cellRect.x - 1 do
+			if overArea.AreaGet(xx,yy) == col then 
+				_ToolPoint(preview,xx,yy)
+			end		
+		end	
+	end
+	return true
+end
+
 -- fill - tool
 local function _ToolFill(preview,xx,yy)	
 	_drawPointList = {}
@@ -736,11 +753,14 @@ function overAreaMeta.DrawOverview(oa, mx, my)
 	
 		if oa.doCharsetGrid then
 			local adjEnable = (activePico:Peek(Pico.CHARSET + 5) & 1) == 1
-			local lw, hw = activePico:Peek(Pico.CHARSET+0), activePico:Peek(Pico.CHARSET+1)
+			local lw, hw, ch = activePico:Peek(Pico.CHARSET+0), activePico:Peek(Pico.CHARSET+1), math.clamp(activePico:Peek(Pico.CHARSET+2),0,8)
 			
 			local yy = oa.overviewRect.y
 			for y = 0, 15 do
 				local xx = oa.overviewRect.x
+				
+				DrawFilledRect( {xx, yy + ch * oa.osize \ 8, 16 * oa.osize , (8- ch) * oa.osize \ 8}, COLGREY)
+				
 				for x = 0, 15 do
 					local char = x + (y << 4)
 					local offw = 0
@@ -956,6 +976,10 @@ end
 
 -- click on areaRect
 function overAreaMeta.MouseDownArea(oa, mx, my, mb)
+	local mod = SDL.Keyboard.GetModState()
+	local isShift = mod:hasflag("SHIFT") > 0
+	local isCtrl = mod:hasflag("CTRL") > 0
+	
 	if oa.lock == "" and SDL.Rect.ContainsPoint(oa.areaRect, {mx, my}) then
 	
 		if mb == "MIDDLE" then
@@ -972,7 +996,11 @@ function overAreaMeta.MouseDownArea(oa, mx, my, mb)
 		
 		if mb == "LEFT" then			
 			-- draw
-			if oa.buttons.AreaStamp:IsSelected() then
+			if isCtrl then 
+				_ToolReplace(false, x,y)
+				oa.lock = "AREAREPLACE"
+			
+			elseif oa.buttons.AreaStamp:IsSelected() then
 				x -= 1
 				y -= 1
 				for yy = 1, #oa.copy.use.a do
@@ -1129,6 +1157,9 @@ function overAreaMeta.MouseUpArea(oa, mx, my, mb)
 	elseif oa.lock == "AREASCROLL" and mb == "MIDDLE" then
 		oa.lock = ""
 		SDL.Cursor.Set(cursorArrow)
+		
+	elseif oa.lock == "AREAREPLACE" and mb == "LEFT" then
+		oa.lock = ""
 	end
 end
 
@@ -1136,6 +1167,9 @@ end
 --===================================================================
 -----------------------------------------------------------------MISC
 --===================================================================
+
+-- shortcut handling
+
 
 -- create the overArea.copy.icon.a
 function overAreaMeta.CreateListCopyIconA(oa)
@@ -1447,6 +1481,115 @@ function overAreaMeta.Quit(oa)
 	oa.hasInit = false
 end
 
+
+local function _InitShotcut(oa)
+	oa.shortcut = {}
+	
+	local function ShortcutMoveCursor(s)
+		if s.shift then
+			if oa.copy.icon.charEnd >= 0 and oa.copy.icon.charEnd + s.off >= 0 and oa.copy.icon.charEnd + s.off <= 255 then
+				oa.copy.icon.charEnd += s.off
+				oa:CreateListCopyIconA()
+			end
+		else	
+			if oa.copy.icon.char + s.off >= 0 and oa.copy.icon.char + s.off <= 255 then
+				oa.copy.icon.char += s.off
+				oa.copy.icon.charEnd = oa.copy.icon.char
+				oa:CreateListCopyIconA()
+			end
+		end		
+	end
+	local MoveColor = function(s)
+		if oa.buttons.Color0.visible then 
+			oa.copy.col.char = (oa.copy.col.char + s.off) % 16
+			oa.copy.col.charEnd = oa.copy.col.char 
+			oa.copy.col.a = {{oa.copy.col.char}}
+		end
+	end
+	local SetColor = function (s)
+		if oa.buttons.Color0.visible then 
+			oa.copy.col.char = s.col
+			oa.copy.col.charEnd = oa.copy.col.char 
+			oa.copy.col.a = {{oa.copy.col.char}}
+		end
+	end
+		
+	local s
+	ShortcutAddMoveCursor16x16(oa.shortcut, ShortcutMoveCursor)	
+	ShortcutAddTransform(oa.shortcut,
+		function() oa.buttons:Click(oa.buttons.AreaFlipX) end,
+		function() oa.buttons:Click(oa.buttons.AreaFlipY) end,
+		function() oa.buttons:Click(oa.buttons.AreaTurnLeft) end,
+		function() oa.buttons:Click(oa.buttons.AreaTurnRight) end,
+		function() oa.buttons:Click(oa.buttons.AreaShiftLeft) end,
+		function() oa.buttons:Click(oa.buttons.AreaShiftRight) end,
+		function() oa.buttons:Click(oa.buttons.AreaShiftUp) end,
+		function() oa.buttons:Click(oa.buttons.AreaShiftDown) end
+	)
+	s = ShortcutAdd(oa.shortcut, "$Q", MoveColor) s.off = -1
+	s = ShortcutAdd(oa.shortcut, "$E", MoveColor) s.off = 1
+	
+	s = ShortcutAdd(oa.shortcut, "CTRL+G", function() oa.buttons:Click(oa.buttons.AreaGrid) end)
+	s = ShortcutAdd(oa.shortcut, "CTRL+H", function() oa.buttons:Click(oa.buttons.AreaID) end)
+	s = ShortcutAdd(oa.shortcut, "CTRL+F", function() oa.buttons:Click(oa.buttons.AreaFlags) end)
+	
+	s = ShortcutAdd(oa.shortcut, "SHIFT+CTRL+G", function() oa.buttons:Click(oa.buttons.OverviewGrid) end)
+	s = ShortcutAdd(oa.shortcut, "SHIFT+CTRL+H", function() oa.buttons:Click(oa.buttons.OverviewId) end)
+	s = ShortcutAdd(oa.shortcut, "SHIFT+CTRL+F", function() oa.buttons:Click(oa.buttons.OverviewFlags) end)
+	
+	s = ShortcutAdd(oa.shortcut, "$GRAVE", SetColor) s.col = 0
+	s = ShortcutAdd(oa.shortcut, "0", SetColor) s.col = 0
+	s = ShortcutAdd(oa.shortcut, "1", SetColor) s.col = 1
+	s = ShortcutAdd(oa.shortcut, "2", SetColor) s.col = 2
+	s = ShortcutAdd(oa.shortcut, "3", SetColor) s.col = 3
+	s = ShortcutAdd(oa.shortcut, "4", SetColor) s.col = 4
+	s = ShortcutAdd(oa.shortcut, "5", SetColor) s.col = 5
+	s = ShortcutAdd(oa.shortcut, "6", SetColor) s.col = 6
+	s = ShortcutAdd(oa.shortcut, "7", SetColor) s.col = 7
+	s = ShortcutAdd(oa.shortcut, "8", SetColor) s.col = 8
+	s = ShortcutAdd(oa.shortcut, "9", SetColor) s.col = 9
+	s = ShortcutAdd(oa.shortcut, "SHIFT+$GRAVE", SetColor) s.col = 10
+	s = ShortcutAdd(oa.shortcut, "SHIFT+0", SetColor) s.col = 10
+	s = ShortcutAdd(oa.shortcut, "SHIFT+1", SetColor) s.col = 11
+	s = ShortcutAdd(oa.shortcut, "SHIFT+2", SetColor) s.col = 12
+	s = ShortcutAdd(oa.shortcut, "SHIFT+3", SetColor) s.col = 13
+	s = ShortcutAdd(oa.shortcut, "SHIFT+4", SetColor) s.col = 14
+	s = ShortcutAdd(oa.shortcut, "SHIFT+5", SetColor) s.col = 15
+	s = ShortcutAdd(oa.shortcut, "KP_0", SetColor) s.col = 0
+	s = ShortcutAdd(oa.shortcut, "KP_1", SetColor) s.col = 1
+	s = ShortcutAdd(oa.shortcut, "KP_2", SetColor) s.col = 2
+	s = ShortcutAdd(oa.shortcut, "KP_3", SetColor) s.col = 3
+	s = ShortcutAdd(oa.shortcut, "KP_4", SetColor) s.col = 4
+	s = ShortcutAdd(oa.shortcut, "KP_5", SetColor) s.col = 5
+	s = ShortcutAdd(oa.shortcut, "KP_6", SetColor) s.col = 6
+	s = ShortcutAdd(oa.shortcut, "KP_7", SetColor) s.col = 7
+	s = ShortcutAdd(oa.shortcut, "KP_8", SetColor) s.col = 8
+	s = ShortcutAdd(oa.shortcut, "KP_9", SetColor) s.col = 9
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_0", SetColor) s.col = 10
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_1", SetColor) s.col = 11
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_2", SetColor) s.col = 12
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_3", SetColor) s.col = 13
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_4", SetColor) s.col = 14
+	s = ShortcutAdd(oa.shortcut, "SHIFT+KP_5", SetColor) s.col = 15
+	
+	b = oa.inputs:Add("AnimSpeed","Speed:","6",bsize)
+	b.min = 1
+	b.max = 20
+	
+	ShortCutAddSpeed(oa.shortcut,
+		function ()
+			if not oa.inputs.AnimSpeed.visible then return end
+			oa.inputs.AnimSpeed.text = tostring( math.clamp(oa.inputs.AnimSpeed.min, oa.inputs.AnimSpeed.max, (tonumber(oa.inputs.AnimSpeed.text) or oa.inputs.AnimSpeed.min) -1))
+		end,
+		function ()
+			if not oa.inputs.AnimSpeed.visible then return end
+			oa.inputs.AnimSpeed.text = tostring( math.clamp(oa.inputs.AnimSpeed.min, oa.inputs.AnimSpeed.max, (tonumber(oa.inputs.AnimSpeed.text) or oa.inputs.AnimSpeed.min) +1))
+		end
+	)
+	
+end
+
+
 -- initalize everything
 function overAreaMeta.Init(oa)
 	if oa.hasInit then return end
@@ -1461,23 +1604,26 @@ function overAreaMeta.Init(oa)
 	oa.scrollbar = scrollbar:CreateContainer()
 	
 	-- we have a custom menu
-	oa.menuBar = SDL.Menu.Create()	
-	MenuAddFile(oa.menuBar)
-	local men = MenuAddEdit(oa.menuBar)	
+	oa.menuBar = menu:CreateBar()
+	oa.menuBar:AddFile()
+	local men = oa.menuBar:AddEdit()	
 	men:Add()
-	MenuAdd(men, "clipboardAsHex", "Use hex values for clipboard", 
+	men:Add("clipboardAsHex", "Use hex values for clipboard", 
 		function (e)	
-			config.clipboardAsHex = not config.clipboardAsHex
+			config.clipboardAsHex = e.checked
 			men:SetCheck("clipboardAsHex", config.clipboardAsHex)
-		end
+		end,
+		nil,
+		"TOOGLE"
 	)
-	MenuAddPico8(oa.menuBar)
-	MenuAddZoom(oa.menuBar)
-	MenuAddSettings(oa.menuBar)
-	MenuAddDebug(oa.menuBar)
+	oa.menuBar:AddPico8()
+	oa.menuBar:AddZoom()
+	oa.menuBar:AddSettings()
+	oa.menuBar:AddModule()
+	oa.menuBar:AddDebug()
 
-	oa.MenuUpdate = function (m, men)
-		men:SetCheck("clipboardAsHex", config.clipboardAsHex)
+	oa.MenuUpdate = function (m,bar)
+		bar:Set("clipboardAsHex", config.clipboardAsHex)
 	end
 		
 	-- some buttons
@@ -1675,6 +1821,7 @@ function overAreaMeta.Init(oa)
 	  b.OnClick = ppClick
 	end
 	
+	_InitShotcut(oa)
 	
 	oa.hasInit = true
 end

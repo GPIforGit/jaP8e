@@ -475,6 +475,15 @@ function libMeta.MouseMove(b, mx, my, mb)
 	return false
 end
 
+
+-- button click
+function libMeta.Click(b,clicked)
+	if clicked.isLabel or not clicked.visible then return false end
+	b:SetRadio(clicked) -- radio button handling
+	if clicked.OnClick then clicked.OnClick(clicked,mx,my) end
+	clicked.pressed = false
+end
+
 -- button end click
 function libMeta.MouseUp(b, mx, my, mb)	
 	if _clicked != nil and _clickedContainer == b and (mb == "LEFT" or mb == "RIGHT") then

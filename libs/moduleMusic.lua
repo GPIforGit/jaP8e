@@ -111,23 +111,27 @@ function m.Init(m)
 	configComment.showSFXmusic = "Show on sound-tiles the id of the music, where it is used"
 
 	-- custom menu
-	m.menuBar = SDL.Menu.Create()	
+	m.menuBar = menu:CreateBar()	
 	
-	MenuAddFile(m.menuBar)
+	m.menuBar:AddFile()
 		
-	local men = MenuAddEdit(m.menuBar)
+	local men = m.menuBar:AddEdit()
 	men:Add()
-	MenuAdd(men, "pasteSFXfromTop", "Paste SFX from top",
+	men:Add("pasteSFXfromTop", "Paste SFX from top",
 		function(e)
-			config.pasteSFXfromTop = not config.pasteSFXfromTop
+			config.pasteSFXfromTop = e.checked
 			men:SetCheck("pasteSFXfromTop", config.pasteSFXfromTop)
-		end
+		end,
+		nil,
+		"TOOGLE"		
 	)
-	MenuAddPico8(m.menuBar)
-	MenuAddSettings(m.menuBar)
-	MenuAddDebug(m.menuBar)
-	m.MenuUpdate = function(m, men)
-		men:SetCheck("pasteSFXfromTop", config.pasteSFXfromTop)
+	m.menuBar:AddPico8()
+	m.menuBar:AddSettings()
+	m.menuBar:AddModule()
+	m.menuBar:AddDebug()
+	
+	m.MenuUpdate = function(m, bar)
+		bar:Set("pasteSFXfromTop", config.pasteSFXfromTop)
 	end
 
 	-- we need some buttons
@@ -746,7 +750,7 @@ function m.KeyDown(m, sym, scan, mod)
 			PicoRemoteMusic( _nb )
 		end
 	
-	elseif scan == "KP_MINUS" or sym == "MINUS" then
+	elseif scan == "KP_MINUS" or sym == "MINUS" or scan == "MINUS" then
 		if _cursorVoice then
 			-- change sfx in voice-modus
 			if _music.sfx[_cursorVoice] > 0 then
@@ -762,7 +766,7 @@ function m.KeyDown(m, sym, scan, mod)
 			end
 		end
 		
-	elseif scan == "KP_PLUS" or sym == "PLUS" then
+	elseif scan == "KP_PLUS" or sym == "PLUS" or scan == "EQUALS" then
 		if _cursorVoice then
 			-- change sfx in voice-modus
 			if _music.sfx[_cursorVoice] < 31 then
@@ -1113,6 +1117,18 @@ function m.SelectAll()
 		_MusicRead(0)
 		_nbEnd=63
 	end
+end
+
+-- copy complete music to hex
+function m.CopyHex(m)
+	local adr,size = activePico:MusicAdr(0), Pico.MUSICLEN
+	return moduleHex:API_CopyHex(adr,size)
+end
+
+-- paste complete music 
+function m.PasteHex(m,str)
+	local adr,size = activePico:MusicAdr(0), Pico.MUSICLEN
+	return moduleHex:API_PasteHex(str,adr,size)
 end
 
 return m

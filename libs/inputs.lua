@@ -168,6 +168,7 @@ function libMeta.SetDown(inp, I2, space)
 end
 
 -- draw
+local _oldCursorEnd
 function libMeta.Draw(l)
 	local ww,hh = SizeText("+")
 	for nb,inp in pairs(l) do
@@ -175,11 +176,16 @@ function libMeta.Draw(l)
 			DrawFilledRect(inp.rectBack, inp.colBack, 255, true)
 			DrawFilledRect( {inp.rectText.x - 2,inp.rectText.y - 2, inp.rectText.w + 4, inp.rectText.h +4}, inp.colBackInput, 255, true )
 			
-			if _hasFocus == inp then
+			if _hasFocus == inp and not menu:HasFocus() then
 				-- draw cursor
 				local s,e = inp.cursor, inp.cursorEnd
 				if s > e then s,e = e,s end			
-				DrawFilledRect( {inp.rectText.x + s * ww , inp.rectText.y , (e - s + 1) * ww, hh}, inp.colSel )
+				DrawFilledRect( {inp.rectText.x + s * ww , inp.rectText.y , (e - s) * ww, hh}, ColorOffset(inp.colSel,-0x66) )
+				
+				if (SDL.Time.Get()*100) % config.cursorBlink < config.cursorBlink\2 or _oldCursorEnd != inp.cursorEnd then
+					_oldCursorEnd = inp.cursorEnd
+					DrawFilledRect( {inp.rectText.x + inp.cursorEnd * ww , inp.rectText.y , 2, hh}, inp.colSel )
+				end
 				
 			elseif inp.adr then
 				-- update from adress
@@ -390,14 +396,8 @@ function libMeta.KeyDown(l, sym, scan, mod)
 		if sym == "BACKSPACE" then
 			local s,e = _hasFocus.cursor, _hasFocus.cursorEnd
 			if s > e then s,e = e,s end	
-			if s != e then
-				-- remove selected text
-				_hasFocus.text = _hasFocus.text:sub(1, s) .. _hasFocus.text:sub(e + 2)
-			elseif s > 0 then 
-				-- normal backspace
-				s -= 1
-				_hasFocus.text = _hasFocus.text:sub(1, s) .. _hasFocus.text:sub(e + 1)
-			end
+			if s == e then s -= 1 end -- remove char before
+			_hasFocus.text = _hasFocus.text:sub(1, s) .. _hasFocus.text:sub(e + 1)
 			_hasFocus.cursor = s
 			_hasFocus.cursorEnd = s
 			_Limit(_hasFocus)
@@ -405,7 +405,8 @@ function libMeta.KeyDown(l, sym, scan, mod)
 		elseif sym == "DELETE" then
 			local s,e = _hasFocus.cursor, _hasFocus.cursorEnd
 			if s > e then s,e = e,s end	
-			_hasFocus.text = _hasFocus.text:sub(1, s) .. _hasFocus.text:sub(e + 2)
+			if s == e then e +=1 end -- remove char after
+			_hasFocus.text = _hasFocus.text:sub(1, s) .. _hasFocus.text:sub(e + 1)
 			_hasFocus.cursor = s
 			_hasFocus.cursorEnd = s
 			_Limit(_hasFocus)
@@ -443,11 +444,7 @@ function libMeta.Input(l, str)
 		if str and str != "" then
 			local s,e = _hasFocus.cursor, _hasFocus.cursorEnd
 			if s > e then s,e = e,s end	
-			if s != e then
-				_hasFocus.text = _hasFocus.text:sub(1, s) .. str .. _hasFocus.text:sub(e + 2)
-			else
-				_hasFocus.text = _hasFocus.text:sub(1, s) .. str .. _hasFocus.text:sub(e + 1)
-			end
+			_hasFocus.text = _hasFocus.text:sub(1, s) .. str .. _hasFocus.text:sub(e + 1)
 			_hasFocus.cursor = s + #str
 			_hasFocus.cursorEnd = s + #str
 			_Limit(_hasFocus)		
@@ -467,7 +464,7 @@ function libMeta.Copy(l)
 	if _hasFocus and _hasLib == l then
 		local s,e = _hasFocus.cursor, _hasFocus.cursorEnd
 		if s > e then s,e = e,s end			
-		return _hasFocus.text:sub(s+1,e+1)
+		return _hasFocus.text:sub(s+1,e)
 	end
 	return nil
 end

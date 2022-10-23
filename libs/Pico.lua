@@ -1482,7 +1482,11 @@ function Lib.CharsetGetPixel(pico,x,y)
 		c =  ((y \ 8) << 4) + (x \ 8)
 		xor = 0
 	end
-	return pico:Peek(Lib.CHARSET + c * 8 + (y % 8)  ) >> (x % 8) & 1 ~ xor
+	local ret = pico:Peek(Lib.CHARSET + c * 8 + (y % 8)  ) >> (x % 8) & 1 ~ xor
+	local adj,oneup = pico:CharsetGetVariable(c)
+	if oneup and ret == 1 then ret = 2 end
+	
+	return ret
 end
 
 -- set a pixel in charset
@@ -1508,7 +1512,11 @@ function Lib.CharsetRender(pico,data,pitch)
 		adr = pitch*y
 		for x=0,127 do 
 			local col = pico:CharsetGetPixel(x,y)
-			if col != 0 then col = 7 end
+			if col == 1 then
+				col = 7
+			elseif col ==  2 then
+				col = 15
+			end
 					
 			data:setu32(adr, ___.RGBHEX[col] & ( col==0 and 0x00ffffff or 0xffffffff) )
 			adr+=4

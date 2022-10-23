@@ -175,7 +175,7 @@ local function _FontDraw(x,y,char,col)
 				char += 97-65
 			elseif char >= 97 and char <= 122 then
 				char += 65-97
-			end			
+			end		
 			return DrawChar(x,y,char,col,_fontOwn.z,_fontOwn.f)
 		end
 	end
@@ -1370,19 +1370,20 @@ end
 
 -- custom menu
 local _mFont
-local function _MenuZoomSet  (e)
-	config.LuaZoom = math.clamp(1,6,tonumber(e:sub(-1)) or 4)
-	_mFont:SetRadio("luaZoom1", "luaZoom6", e )
+local function _MenuZoomSet(e)
+	config.LuaZoom = math.clamp(1,6,e.index or 4)
+	e:SetRadio()
 	_FontChoose()
 	m:Resize()
 end
 
 local function _MenuInit()
-	m.menuBar = SDL.Menu.Create()		
-	MenuAddFile(m.menuBar)
-	local men = MenuAddEdit(m.menuBar)
+	m.menuBar = menu:CreateBar()
+	
+	m.menuBar:AddFile()
+	local men = m.menuBar:AddEdit()
 	men:Add()
-	MenuAdd(men, "luaSelectNext", "Duplicate line \t ctrl+d", function ()
+	men:Add("luaSelectNext", "Duplicate line \t ctrl+d", function ()
 			local line,offset = _PosToLineOffset(_cursorPos)
 			local str = activePico:LuaSub(_lines[line].s, _lines[line].e)
 			activePico:LuaReplace(_lines[line].e, _lines[line].e, str)
@@ -1392,7 +1393,7 @@ local function _MenuInit()
 		end,
 		"CTRL+D"
 	)
-	MenuAdd(men,"luaLowerCase", "Convert to lower case \t ctrl+u", function()		
+	men:Add("luaLowerCase", "Convert to lower case \t ctrl+u", function()		
 			if _cursorPos != _cursorPosEnd then
 				local s,e = _cursorPos, _cursorPosEnd
 				if s>e then s,e = e,s end
@@ -1406,7 +1407,7 @@ local function _MenuInit()
 		end,
 		"CTRL+U"
 	)
-	MenuAdd(men,"luaUpperCase", "Convert to UPPER CASE \t shift+ctrl+u", function()		
+	men:Add("luaUpperCase", "Convert to UPPER CASE \t shift+ctrl+u", function()		
 			if _cursorPos != _cursorPosEnd then
 				local s,e = _cursorPos, _cursorPosEnd
 				if s>e then s,e = e,s end
@@ -1419,7 +1420,7 @@ local function _MenuInit()
 		end,
 		"SHIFT+CTRL+U"
 	)
-	MenuAdd(men, "luaComment", "Insert/remove comment \t ctrl+b", function()	
+	men:Add("luaComment", "Insert/remove comment \t ctrl+b", function()	
 			if _cursorPos != _cursorPosEnd then
 				activePico:LuaSetUndoCursor(_cursorPos, _cursorPosEnd )
 		
@@ -1453,7 +1454,7 @@ local function _MenuInit()
 		end,
 		"CTRL+B"
 	)
-	MenuAdd(men, "luaIndent", "Automatic indent document \t ctrl+i",function()	
+	men:Add("luaIndent", "Automatic indent document \t ctrl+i",function()	
 			activePico:LuaSetUndoCursor(_cursorPos, _cursorPosEnd )
 			for nb = #_lines,1,-1 do
 				local line = _lines[nb]
@@ -1485,7 +1486,7 @@ local function _MenuInit()
 		end,
 		"CTRL+I"
 	)
-	MenuAdd(men, "luaTab", "Increase indent \t tab", function()
+	men:Add("luaTab", "Increase indent \t tab", function()
 		if _cursorPos != _cursorPosEnd then
 			local line1 = _PosToLineOffset(_cursorPos)
 			local line2 = _PosToLineOffset(_cursorPosEnd)
@@ -1501,7 +1502,7 @@ local function _MenuInit()
 			m:Input("\t")
 		end
 	end, "TAB")
-	MenuAdd(men, "luaShiftTab", "Decrease indent \t shift+tab", function()
+	men:Add("luaShiftTab", "Decrease indent \t shift+tab", function()
 		if _cursorPos != _cursorPosEnd then
 			local line1 = _PosToLineOffset(_cursorPos)
 			local line2 = _PosToLineOffset(_cursorPosEnd)
@@ -1521,21 +1522,21 @@ local function _MenuInit()
 		end
 	end, "SHIFT+TAB")
 	men:Add()
-	MenuAdd(men, "luaSaveBlock", "Save block", _SaveBlock,nil)
-	MenuAdd(men, "luaLoadBlock", "Load block", _LoadBlock,nil)
+	men:Add("luaSaveBlock", "Save block", _SaveBlock,nil)
+	men:Add("luaLoadBlock", "Load block", _LoadBlock,nil)
 	
 	men:Add()
-	MenuAdd(men, "luaPuny", "Puny mode \t ctrl+p",function()
-		_puny = not _puny 
-		men:SetCheck("luaPuny", _puny)
-	end, "CTRL+P")
+	men:Add("luaPuny", "Puny mode \t ctrl+p",function(e)
+		_puny = e.checked
+	end, "CTRL+P","TOOGLE")
 	
 		
-	local mSearch = m.menuBar:Add("&Search")
-	MenuAdd(mSearch, "luaFind", "Find \t ctrl+f", function() _FindOpen() end, "CTRL+F")
-	MenuAdd(mSearch, "luaNext", "Find next \t F3", _FindNext, "F3")
-	MenuAdd(mSearch, "luaPrevious", "Find previous \t shift+F3", _FindPrevious,"SHIFT+F3")
-	MenuAdd(mSearch, "luaSelectNext", "Select and find next \t ctrl+F3", function ()
+	local mSearch = m.menuBar:Add("Search")
+	mSearch:Add("luaFind", "Find \t ctrl+f", function() _FindOpen() end, "CTRL+F")
+	
+	mSearch:Add("luaNext", "Find next \t F3", _FindNext, "F3")
+	mSearch:Add("luaPrevious", "Find previous \t shift+F3", _FindPrevious,"SHIFT+F3")
+	mSearch:Add("luaSelectNext", "Select and find next \t ctrl+F3", function ()
 			if _cursorPos == _cursorPosEnd then
 				_SelectWord(_cursorPos)
 			end
@@ -1546,7 +1547,7 @@ local function _MenuInit()
 		end,
 		"CTRL+F3"
 	)
-	MenuAdd(mSearch, "luaSelectPrevious", "Select and find previous \t shift+ctrl+F3", function ()
+	mSearch:Add("luaSelectPrevious", "Select and find previous \t shift+ctrl+F3", function ()
 			if _cursorPos == _cursorPosEnd then
 				_SelectWord(_cursorPos)
 			end
@@ -1557,37 +1558,62 @@ local function _MenuInit()
 		end,
 		"SHIFT+CTRL+F3"
 	)
-	MenuAdd(mSearch, "luaReplace", "Replace \t ctrl+h", function() _FindOpen(true) end, "CTRL+H")
-	MenuAdd(mSearch, "luamark", "Mark \t ctrl+m", function() _SelectWord(_cursorPos) end, "CTRL+M")
+	mSearch:Add("luaReplace", "Replace \t ctrl+h", function() _FindOpen(true) end, "CTRL+H")
+	mSearch:Add("luamark", "Mark \t ctrl+m", function() _SelectWord(_cursorPos) end, "CTRL+M")
 	mSearch:Add()
-	MenuAdd(mSearch, "luaLine", "Go to line \t ctrl+g", _GotoOpen, "CTRL+G")
+	mSearch:Add("luaLine", "Go to line \t ctrl+g", _GotoOpen, "CTRL+G")
 	mSearch:Add()
-	MenuAdd(mSearch, "luaNextFN", "Next function \t ctrl+down", _NextFunction, "CTRL+DOWN")
-	MenuAdd(mSearch, "luaPrevFN", "Previous function \t ctrl+up", _PreviousFunction, "CTRL+UP")
+	mSearch:Add("luaNextFN", "Next function \t ctrl+down", _NextFunction, "CTRL+DOWN")
+	mSearch:Add("luaPrevFN", "Previous function \t ctrl+up", _PreviousFunction, "CTRL+UP")
 	
-	MenuAddPico8(m.menuBar)
+	m.menuBar:AddPico8()
 	
-	_mFont = m.menuBar:Add("&Zoom")
-	MenuAdd(_mFont, "LuaFontCustom","Use custom font",
-		function()
-			config.LuaFontCustom = not config.LuaFontCustom
-			_mFont:SetCheck("LuaFontCustom", config.LuaFontCustom)
+	_mFont = m.menuBar:Add("Zoom")
+	_mFont:Add("LuaFontCustom","Use custom font",
+		function(e)
+			config.LuaFontCustom = e.checked
+			
 			_FontChoose()
 			m:Resize()
-		end
+		end,
+		nil,
+		"TOOGLE"
 	)
 	_mFont:Add()
 	for i = 1,6 do
-		MenuAdd(_mFont, "luaZoom"..i, tostring(i), _MenuZoomSet)
+		local e = _mFont:Add("luaZoom"..i, tostring(i), _MenuZoomSet,nil,"font")
+		e.index = i
 	end
+	
+	local ViewChange = function(str)
+		-- activate Button
+		for nb,b in pairs(m.buttons) do
+			if b.index == str then
+				b:OnClick(b)
+				m.buttons:SetRadio(b)
+				break
+			end
+		end
 		
-	MenuAddSettings(m.menuBar)
-	MenuAddDebug(m.menuBar)
+	end
+	
+	_mView = m.menuBar:Add("View")
+	_mView:Add("luaViewfunction","Functions\t shift+ctrl+1",function() ViewChange("function") end,"CTRL+SHIFT+1")
+	_mView:Add("luaViewsprite","Sprites\t shift+ctrl+2",function() ViewChange("sprite") end,"CTRL+SHIFT+2")
+	_mView:Add("luaViewcharset","Font\t shift+ctrl+3",function() ViewChange("charset") end,"CTRL+SHIFT+3")
+	_mView:Add("luaViewsound","Sound\t shift+ctrl+4",function() ViewChange("sound") end,"CTRL+SHIFT+4")
+	_mView:Add("luaViewmusic","Music\t shift+ctrl+5",function() ViewChange("music") end,"CTRL+SHIFT+5")
+	_mView:Add("luaViewpalette","Palette\t shift+ctrl+6",function() ViewChange("palette") end,"CTRL+SHIFT+6")
+			
+	m.menuBar:AddSettings()
+	m.menuBar:AddModule()
+	m.menuBar:AddDebug()
 	
 	m.MenuUpdate = function (m,bar)
-		bar:SetCheck("luaPuny", _puny)	
-		bar:SetCheck("LuaFontCustom", config.LuaFontCustom)
-		bar:SetRadio("luaZoom1", "luaZoom6", "luaZoom".. config.LuaZoom )
+		bar:Set("luaPuny", _puny)	
+		bar:Set("LuaFontCustom", config.LuaFontCustom)
+		bar:Set("luaZoom".. config.LuaZoom )
+		bar:Set("luaView".._leftSideMode)
 	end
 	
 end
@@ -1611,6 +1637,7 @@ function m.Init(m)
 		_leftSideMode = but.index
 		PicoRemoteSFX(-1)
 		PicoRemoteMusic(-1)
+		m.menuBar:Set("luaView".._leftSideMode)
 	end
 	
 	-- left side buttons
@@ -2375,7 +2402,7 @@ function m.Draw(m)
 	
 	-- draw blinking cursor
 	local cLine,cOffset = _PosToLineOffset(_cursorPos)	
-	if (_oldCLine != cLine or _oldCOffset != cOffset or (SDL.Time.Get()*100) % config.cursorBlink < config.cursorBlink\2 ) and hasFocus and not popup:HasFocus() then 
+	if (_oldCLine != cLine or _oldCOffset != cOffset or (SDL.Time.Get()*100) % config.cursorBlink < config.cursorBlink\2 ) and hasFocus and not popup:HasFocus() and not menu:HasFocus() then 
 		local xx = _FontLineWidth(cLine, cOffset -2)
 		DrawFilledRect({_rectText.x + 5 + (xx - offset - 1), _rectText.y + (cLine - line - 1) * _FontHeight(), 2, _FontHeight()}, _rgb.LuaColorCursor)
 		_oldCLine, _oldCOffset = cLine, cOffset		
@@ -2541,9 +2568,13 @@ function m.MouseWheel(m, wx, wy, mx, my)
 	if SDL.Keyboard.GetModState():hasflag("CTRL") > 0 then
 		wy = math.clamp(-1,1,wy)	
 		config.LuaZoom = math.clamp( config.LuaZoom + wy, 1, 6)
-		_MenuZoomSet("luaZoom"..config.LuaZoom)
+		_MenuZoomSet(menu:GetId("luaZoom"..config.LuaZoom))
 		
 	else
+	
+		if SDL.Keyboard.GetModState():hasflag("SHIFT") > 0 then
+			wx,wy = - wy * _fontMaxWidth(), -wx
+		end
 		if SDL.Rect.ContainsPoint(_rectSourceCode, {mx, my}) then
 			local pos = m.scrollbar.y:GetValues()
 			m.scrollbar.y:SetValues( pos - wy)

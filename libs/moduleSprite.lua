@@ -230,11 +230,13 @@ end
 
 function m.Init(m)
 	overArea:Init()
-
 	m.menuBar = overArea.menuBar
 	m.buttons = overArea.buttons
 	m.inputs = overArea.inputs
 	m.scrollbar = overArea.scrollbar
+	m.shortcut = overArea.shortcut
+	
+	
 	return true
 end
 
@@ -355,10 +357,9 @@ function m.MouseDown(m, mx, my, mb, mbclicks)
 				end
 			end
 			
-			
-			
 		end
-
+		
+		overArea:MouseDownArea(mx, my, mb, mbclicks)
 	else
 		overArea:MouseDownOverview(mx, my, mb, mbclicks)
 		overArea:MouseDownArea(mx, my, mb, mbclicks)
@@ -440,60 +441,16 @@ function m.MouseWheel(m,x,y,mx,my)
 	MenuRotateZoom(y > 0) 
 end
 
-function m.KeyDown(m, sym, scan, mod)
-	if mod:hasflag("CTRL ALT GUI") > 0 then return nil end
-	
-	
-	local off, coff
-	if scan == "A" then
-		off = -1
-	elseif scan == "D" then
-		off = 1
-	elseif scan == "W" then
-		off = -16
-	elseif scan == "S" then
-		off = 16
-	elseif scan == "Q" then
-		coff = -1
-	elseif scan == "E" then
-		coff = 1
-	end
-	
-	
-	if off then 
-		if mod:hasflag("SHIFT") == 0 then
-			if overArea.copy.icon.char + off >= 0 and overArea.copy.icon.char + off <= 255 then
-				overArea.copy.icon.char += off
-				overArea.copy.icon.charEnd = overArea.copy.icon.char
-				overArea:CreateListCopyIconA()
-			end
-		elseif overArea.copy.icon.charEnd >= 0 then
-			if overArea.copy.icon.charEnd + off >= 0 and overArea.copy.icon.charEnd + off <= 255 then
-				overArea.copy.icon.charEnd += off
-				overArea:CreateListCopyIconA()
-			end
-		end
-	end
-	
-	if coff then
-		overArea.copy.col.char = (overArea.copy.col.char + coff) % 16
-		overArea.copy.col.charEnd = overArea.copy.col.char 
-		overArea.copy.col.a = {{overArea.copy.col.char}}
-	end
-	
-	-- hack ^ = 0
-	if scan == "GRAVE" then sym = "0" end
-	if sym >= "0" and sym <= "7" then
-		if mod:hasflag("SHIFT")== 0 then
-			overArea.copy.col.char = tonumber(sym) 
-		else
-			overArea.copy.col.char = tonumber(sym) + 8
-		end
-		overArea.copy.col.charEnd = overArea.copy.col.char 
-		overArea.copy.col.a = {{overArea.copy.col.char}}
-	end
-	
-	
+-- copy complete sprite to hex
+function m.CopyHex(m)
+	local adr,size = activePico:SpriteAdr(0,0), Pico.SPRITELEN
+	return moduleHex:API_CopyHex(adr,size)
+end
+
+-- paste complete sprite 
+function m.PasteHex(m,str)
+	local adr,size = activePico:SpriteAdr(0,0), Pico.SPRITELEN
+	return moduleHex:API_PasteHex(str,adr,size)
 end
 
 return m

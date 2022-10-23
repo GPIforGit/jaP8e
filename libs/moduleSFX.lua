@@ -253,6 +253,61 @@ function m.Init(m)
 
 	b = m.buttons:AddHex("SFXPos","Pos:",0,100,nil,Pico.SFXPOS)
 	b.hexFilter = 0xff08
+	
+	m.shortcut = {}
+	ShortCutAddSpeed(m.shortcut, 
+		function (s)
+			m.inputs.speed.text = tostring( (tonumber(m.inputs.speed.text) or 0) - 1 )
+			_SFXWrite()
+		end,
+		function (s)
+			m.inputs.speed.text = tostring( (tonumber(m.inputs.speed.text) or 0) + 1 )
+			_SFXWrite()
+		end
+	)
+	
+	local function SfxMinus()
+		-- previous sfx
+		if _sfxNb > 0 then
+			_sfxNb -= 1
+			_SFXRead()
+		end
+	end
+	local function SfxPlus()
+		-- next sfx
+		if _sfxNb < 63 then
+			_sfxNb += 1
+			_SFXRead()
+		end
+	end
+	
+	ShortcutAdd(m.shortcut, "MINUS", SfxMinus)
+	ShortcutAdd(m.shortcut, "KP_MINUS", SfxMinus)
+	ShortcutAdd(m.shortcut, "$MINUS", SfxMinus)
+	ShortcutAdd(m.shortcut, "PLUS", SfxPlus)
+	ShortcutAdd(m.shortcut, "KP_PLUS", SfxPlus)
+	ShortcutAdd(m.shortcut, "$EQUALS", SfxPlus)
+	
+	ShortcutAdd(m.shortcut, "SPACE",
+		function (s)
+			local mus,pat,s1,s2,s3,s4,t1,t2,t3,t4 = PicoRemoteStatus()
+			
+			if mus or s1 != -1 then
+				-- stop playing
+				PicoRemoteSFX( -1 )		
+				PicoRemoteMusic( -1 )
+			else
+				if _cursorNote == _cursorNoteEnd then
+					-- play complete sfx
+					PicoRemoteSFX( _sfxNb )
+				else
+					-- play only selection
+					PicoRemoteSFX( _sfxNb, _cursorNote - 1, _cursorNoteEnd - 1 )
+				end
+			end
+		end
+	)
+		
 	return true
 end
 
@@ -692,35 +747,6 @@ function m.KeyDown(m, sym, scan, mod)
 			_cursorNoteEnd = _cursorNote
 		end
 	
-	elseif scan == "SPACE" then
-		local mus,pat,s1,s2,s3,s4,t1,t2,t3,t4 = PicoRemoteStatus()
-		
-		if mus or s1 != -1 then
-			-- stop playing
-			PicoRemoteSFX( -1 )		
-			PicoRemoteMusic( -1 )
-		else
-			if _cursorNote == _cursorNoteEnd then
-				-- play complete sfx
-				PicoRemoteSFX( _sfxNb )
-			else
-				-- play only selection
-				PicoRemoteSFX( _sfxNb, _cursorNote - 1, _cursorNoteEnd - 1 )
-			end
-		end
-	
-	elseif scan == "KP_MINUS" or sym == "MINUS" then
-		-- previous sfx
-		if _sfxNb > 0 then
-			_sfxNb -= 1
-			_SFXRead()
-		end
-	elseif scan == "KP_PLUS" or sym == "PLUS" then
-		-- next sfx
-		if _sfxNb < 63 then
-			_sfxNb += 1
-			_SFXRead()
-		end
 	end
 	
 	
@@ -1221,5 +1247,16 @@ function m.SelectAll(m)
 	_cursorNoteEnd = 32
 end
 
+-- copy complete sound to hex
+function m.CopyHex(m)
+	local adr,size = activePico:SFXAdr(0), Pico.SFXLEN
+	return moduleHex:API_CopyHex(adr,size)
+end
+
+-- paste complete sound 
+function m.PasteHex(m,str)
+	local adr,size = activePico:SFXAdr(0), Pico.SFXLEN
+	return moduleHex:API_PasteHex(str,adr,size)
+end
 
 return m

@@ -212,6 +212,17 @@ function m.Init(m)
 	m.buttons = overArea.buttons
 	m.inputs = overArea.inputs
 	m.scrollbar = overArea.scrollbar
+	
+	m.shortcut = {}
+	s = ShortcutAdd(m.shortcut, "CTRL+G", function() m.buttons:Click(m.buttons.AreaGrid) end)
+	s = ShortcutAdd(m.shortcut, "CTRL+H", function() m.buttons:Click(m.buttons.AreaID) end)
+	s = ShortcutAdd(m.shortcut, "CTRL+F", function() m.buttons:Click(m.buttons.AreaFlags) end)
+	
+	s = ShortcutAdd(m.shortcut, "SHIFT+CTRL+G", function() m.buttons:Click(m.buttons.OverviewGrid) end)
+	s = ShortcutAdd(m.shortcut, "SHIFT+CTRL+H", function() m.buttons:Click(m.buttons.OverviewId) end)
+	s = ShortcutAdd(m.shortcut, "SHIFT+CTRL+F", function() m.buttons:Click(m.buttons.OverviewFlags) end)
+	-- all other shortcut highlight the pressed char!
+	
 	return true
 end
 
@@ -435,6 +446,16 @@ function m.Copy(m)
 	InfoBoxSet("Copied character.")
 	
 	return str
+end
+
+-- copy complete charset to hex
+function m.CopyHex(m)
+	return moduleHex:API_CopyHex(Pico.CHARSET,Pico.CHARSETLEN)
+end
+
+-- paste complete charset 
+function m.PasteHex(m,str)
+	return moduleHex:API_PasteHex(str, Pico.CHARSET,Pico.CHARSETLEN)
 end
 
 -- delete characters from charset

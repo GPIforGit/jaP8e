@@ -159,12 +159,110 @@ function m.API_SelectRange(m, posStart, posEnd)
 	_CursorVisible(m)
 end
 
+-- Copy memory as hex
+function m.API_CopyHex(m, adr, size)
+	InfoBoxSet(string.format("Copied from 0x%04x %d bytes.", adr, size))
+	return string.format("\\^@%04x%04x",adr,size).. activePico:PeekChar(adr,size)
+end
+
+-- paste hex as memory
+function m.API_PasteHex(m, str, adr, size)
+	if str:sub(1,1) == "\"" and str:sub(-1,-1) == "\"" then
+		str = str:sub(2,-2)
+	end
+
+	if str:sub(1,3) == "\\^@" then
+		
+		-- get data from string
+		local cadr = tonumber("0x" .. str:sub(4,7)) or 0
+		local csize = tonumber("0x" .. str:sub(8,11)) or 1
+		
+		-- when size = 1 select all
+		if size == 1 then size = csize end		
+		-- when the selected size is bigger than from to paste, clamp to csize		
+		size = math.min(size,csize) 
+		
+		
+		local action		
+		if adr == cadr and csize <= size then
+			-- identical, always simple copy
+			action = "YES"
+		else
+			-- ask where to paste - stored memory adress or selected space?
+			action = SDL.Request.Message(window, TITLE, string.format("Copy %d bytes to 0x%04x?\n (no = %d bytes to 0x%04x)",csize,cadr,size,adr),"YESNOCANCEL QUESTION DEFAULT3")
+		end
+		
+		if action == "YES" then
+			-- copy to position from clipboard
+			activePico:PokeChar(cadr, str:sub(12), csize)
+			_cursor = cadr
+			_cursorEnd = cadr + csize -1
+			_cursorSub = 0
+			InfoBoxSet(string.format("Pasted to 0x%04x %d bytes.", cadr, csize))
+			
+		elseif action == "NO" then
+			-- copy to selected memory position
+			activePico:PokeChar(adr, str:sub(12), size)
+			_cursor = adr
+			_cursorEnd = adr + size -1
+			_cursorSub = 0
+			InfoBoxSet(string.format("Pasted to 0x%04x %d bytes.", adr, size))
+		end
+		
+	end
+end
+
 -- free all resources
 function m.Quit(m)
 	m.buttons:DestroyContainer()
 	m.scrollbar:DestroyContainer()
 	m.inputs:DestroyContainer()
 	m.menuBar:Destroy()	
+end
+
+-- shortcuts
+local function _InitShortcut()
+	local MoveCursor = function (s)
+		local off
+		if s.off then
+			off = s.off
+		else
+			local barPos, barPage = m.scrollbar.hex:GetValues()
+			off = s.page * _LINEBYTES * (barPage \2)
+		end
+	
+		_cursor = math.clamp(0,0xffff,_cursor + off)
+		if not s.shift then 
+			_cursorEnd = _cursor
+		end
+		_CursorVisible(m)
+	end
+	
+	local Delete = function (s)
+		for adr = _cursor, _cursorEnd, _cursor > _cursorEnd and -1 or 1 do
+			activePico:Poke(adr, 0)
+		end
+	end
+	
+		
+	m.shortcut = {}
+	local s
+	s = ShortcutAdd(m.shortcut, "UP", MoveCursor) s.off = -_LINEBYTES
+	s = ShortcutAdd(m.shortcut, "DOWN", MoveCursor) s.off = _LINEBYTES
+	s = ShortcutAdd(m.shortcut, "LEFT", MoveCursor) s.off = -1
+	s = ShortcutAdd(m.shortcut, "RIGHT", MoveCursor) s.off = 1
+	s = ShortcutAdd(m.shortcut, "PAGEUP", MoveCursor) s.page = -1
+	s = ShortcutAdd(m.shortcut, "PAGEDOWN", MoveCursor) s.page = 1
+	
+	s = ShortcutAdd(m.shortcut, "SHIFT+UP", MoveCursor) s.off = -_LINEBYTES s.shift = true
+	s = ShortcutAdd(m.shortcut, "SHIFT+DOWN", MoveCursor) s.off = _LINEBYTES s.shift = true
+	s = ShortcutAdd(m.shortcut, "SHIFT+LEFT", MoveCursor) s.off = -1 s.shift = true
+	s = ShortcutAdd(m.shortcut, "SHIFT+RIGHT", MoveCursor) s.off = 1 s.shift = true
+	s = ShortcutAdd(m.shortcut, "SHIFT+PAGEUP", MoveCursor) s.page = -1 s.shift = true
+	s = ShortcutAdd(m.shortcut, "SHIFT+PAGEDOWN", MoveCursor) s.page = 1 s.shift = true
+	
+	s = ShortcutAdd(m.shortcut, "DELETE", Delete)
+	s = ShortcutAdd(m.shortcut, "BACKSPACE", Delete)
 end
 
 -- initalize module
@@ -174,7 +272,7 @@ function m.Init(m)
 	m.scrollbar = scrollbar:CreateContainer()
 	m.inputs = inputs:CreateContainer()
 	
-	_rectHexBorder = {x=0, y=topLimit, w= w1 * (4 + 2 + _LINEBYTES*3 + 2 + _LINEBYTES), h=0}
+	_rectHexBorder = {x=0, y=topLimit, w= w1 * (4 + 2 + _LINEBYTES * 3 + 2 + _LINEBYTES), h=0}
 	_rectHexText = {x=0, y=_rectHexBorder.y + 5, w=_rectHexBorder.w - 10, h=0}
 	_rectInfoValues = {x=0, y=0, w= _rectHexBorder.w, h=h1}
 	
@@ -221,7 +319,7 @@ function m.Init(m)
 	b = m.buttons:Add("MUSIC", "Music",size)
 	b.userdata = {Pico.MUSIC  ,Pico.MUSICLEN}
 	
-	b = m.buttons:Add("SFX","SFX", size)
+	b = m.buttons:Add("SFX","Sound", size)
 	b.userdata = {Pico.SFX    ,Pico.SFXLEN}
 	
 	b = m.buttons:Add("romAll", "Complete Rom",size)
@@ -260,7 +358,7 @@ function m.Init(m)
 	b = m.buttons:Add("FlagsCustom", "Flags",size)
 	b.userdata = {0x0000,Pico.SPRFLAGLEN}
 	
-	b = m.buttons:Add("SFXCustom", "SFX",size)
+	b = m.buttons:Add("SFXCustom", "Sound",size)
 	b.userdata = {0x0000,Pico.SFXLEN}
 	
 	b = m.buttons:Add("MusicCustom", "Music",size)
@@ -293,7 +391,7 @@ function m.Init(m)
 	end
 	
 	-- select-input fields
-	b = m.inputs:Add("sfx", "SFX:  ", "", 160,nil)
+	b = m.inputs:Add("sfx", "Sound:", "", 160,nil)
 	b.OnTextChange = function (inp,text)
 		local f, a, b = _Calc(text)
 		if f then
@@ -346,17 +444,20 @@ function m.Init(m)
 	b.OnClick = _ButSaveBin
 
 	-- custom menu
-	m.menuBar = SDL.Menu.Create()	
-	MenuAddFile(m.menuBar)	
+	m.menuBar = menu:CreateBar()
+	m.menuBar:AddFile()	
 	
-	local men = MenuAddEdit(m.menuBar)
+	local men = m.menuBar:AddEdit()
 	men:Add()
-	MenuAdd(men, "loadBinary", "Load binary", _ButLoadBin, nil)
-	MenuAdd(men, "saveBinary", "Save binary", _ButSaveBin, nil)
+	men:Add("loadBinary", "Load binary", _ButLoadBin, nil)
+	men:Add("saveBinary", "Save binary", _ButSaveBin, nil)
 	
-	MenuAddPico8(m.menuBar)
-	MenuAddSettings(m.menuBar)
-	MenuAddDebug(m.menuBar)
+	m.menuBar:AddPico8()
+	m.menuBar:AddSettings()
+	m.menuBar:AddModule()
+	m.menuBar:AddDebug(r)
+	
+	_InitShortcut()
 	
 	return true
 end
@@ -560,47 +661,6 @@ function m.Input(m, sym)
 	end
 end
 
--- pressed key
-function m.KeyDown(m, sym, scan, mod)
-	if mod:hasflag("CTRL ALT GUI") > 0 or m.lock or m.inputs.HasFocus() then return nil end
-	
-	local off = 0
-	if sym == "UP" then
-		off -= _LINEBYTES
-	elseif sym == "DOWN" then
-		off += _LINEBYTES
-	elseif sym == "LEFT" then
-		off -= 1
-	elseif sym == "RIGHT" then
-		off += 1
-	elseif sym == "PAGEUP" then
-		local barPos, barPage = m.scrollbar.hex:GetValues()
-		off -= _LINEBYTES * (barPage \2)
-	elseif sym == "PAGEDOWN" then
-		local barPos, barPage = m.scrollbar.hex:GetValues()
-		off += _LINEBYTES * (barPage \2)	
-	end
-	if off != 0 then 
-		if mod:hasflag("SHIFT") == 0 then 	
-			_cursor = math.clamp(0,0xffff,_cursor + off)
-			_cursorEnd = _cursor
-			_cursorSub = 0
-		else
-			_cursor = math.clamp(0,0xffff,_cursor + off)
-			_cursorSub = 0
-		end
-		
-		_CursorVisible(m)
-
-	end
-	
-	if sym == "DELETE" then
-		for adr = _cursor, _cursorEnd, _cursor > _cursorEnd and -1 or 1 do
-			activePico:Poke(adr, 0)
-		end
-	end
-
-end
 
 -- mousewheel to scroll
 function m.MouseWheel(m,x,y,mx,my)
@@ -702,57 +762,21 @@ end
 -- copy memory to clipboard as pico8-string
 function m.Copy(m)
 	local adr,size = math.min(_cursorEnd, _cursor), math.abs(_cursor - _cursorEnd) + 1
-	
-	InfoBoxSet(string.format("Copied from 0x%04x %d bytes.", adr, size))
-	return string.format("\\^@%04x%04x",adr,size).. activePico:PeekChar(adr,size)				
+	return m:API_CopyHex(adr,size)
 end
 
 -- paste clipboard into memory
+
+
+
 function m.Paste(m, str)
-	if str:sub(1,1) == "\"" and str:sub(-1,-1) == "\"" then
-		str = str:sub(2,-2)
-	end
-
-	if str:sub(1,3) == "\\^@" then
-
-		local adr,size = math.min(_cursorEnd, _cursor), math.abs(_cursor - _cursorEnd) + 1
-		
-		-- get data from string
-		local cadr = tonumber("0x" .. str:sub(4,7)) or 0
-		local csize = tonumber("0x" .. str:sub(8,11)) or 1
-		
-		-- when size = 1 select all
-		if size == 1 then size = csize end		
-		-- when the selected size is bigger than from to paste, clamp to csize		
-		size = math.min(size,csize) 
-		
-		
-		local action		
-		if adr == cadr and csize <= size then
-			-- identical, always simple copy
-			action = "YES"
-		else
-			-- ask where to paste - stored memory adress or selected space?
-			action = SDL.Request.Message(window, TITLE, string.format("Copy %d bytes to 0x%04x?\n (no = %d bytes to 0x%04x)",csize,cadr,size,adr),"YESNOCANCEL QUESTION DEFAULT3")
-		end
-		
-		if action == "YES" then
-			-- copy to position from clipboard
-			activePico:PokeChar(cadr, str:sub(12), csize)
-			_cursor = cadr
-			_cursorEnd = cadr + csize -1
-			_cursorSub = 0
-			_CursorVisible(m)
-		elseif action == "NO" then
-			-- copy to selected memory position
-			activePico:PokeChar(adr, str:sub(12), size)
-			_cursor = adr
-			_cursorEnd = adr + size -1
-			_cursorSub = 0
-			_CursorVisible(m)
-		end
-		
-	end
+	local adr,size = math.min(_cursorEnd, _cursor), math.abs(_cursor - _cursorEnd) + 1
+	m:API_PasteHex(str, adr, size)
+	_CursorVisible(m)
 end
+
+m.CopyHex = m.Copy
+m.PasteHex = m.Paste
+
 
 return m

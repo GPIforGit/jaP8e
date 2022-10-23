@@ -99,6 +99,7 @@ function m.Init(m)
 	m.buttons = overArea.buttons
 	m.inputs = overArea.inputs
 	m.scrollbar = overArea.scrollbar
+	m.shortcut = overArea.shortcut
 	return true
 end
 
@@ -197,6 +198,8 @@ function m.MouseDown(m, mx, my, mb, mbclicks)
 			
 			
 		end
+		
+		overArea:MouseDownArea(mx, my, mb, mbclicks)
 
 	else
 		overArea:MouseDownOverview(mx, my, mb, mbclicks)
@@ -309,36 +312,26 @@ function m.MouseWheel(m,x,y,mx,my)
 	MenuRotateZoom(y > 0) 
 end
 
--- Keyboard handling
-function m.KeyDown(m, sym, scan, mod)
-	if mod:hasflag("CTRL ALT GUI") > 0 then return nil end
-	
-	local off
-	if scan == "A" then
-		off = -1
-	elseif scan == "D" then
-		off = 1
-	elseif scan == "W" then
-		off = -16
-	elseif scan == "S" then
-		off = 16
+-- copy complete map to hex
+function m.CopyHex(m)
+	local adr,size = activePico:MapAdr(0,0)
+	if adr < 0x8000 then
+		adr,size = 0x1000,0x2000
+	else
+		size = activePico:MapSize()
 	end
-	
-	if off then 
-		if mod:hasflag("SHIFT") == 0 then
-			if overArea.copy.icon.char + off >= 0 and overArea.copy.icon.char + off <= 255 then
-				overArea.copy.icon.char += off
-				overArea.copy.icon.charEnd = overArea.copy.icon.char
-				overArea:CreateListCopyIconA()
-			end
-		elseif overArea.copy.icon.charEnd >= 0 then
-			if overArea.copy.icon.charEnd + off >= 0 and overArea.copy.icon.charEnd + off <= 255 then
-				overArea.copy.icon.charEnd += off
-				overArea:CreateListCopyIconA()
-			end
-		end
+	return moduleHex:API_CopyHex(adr,size)
+end
+
+-- paste complete map 
+function m.PasteHex(m,str)
+	local adr,size = activePico:MapAdr(0,0)
+	if adr < 0x8000 then
+		adr,size = 0x1000,0x2000
+	else
+		size = activePico:MapSize()
 	end
-	
+	return moduleHex:API_PasteHex(str,adr,size)
 end
 
 

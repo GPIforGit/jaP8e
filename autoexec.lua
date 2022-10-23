@@ -1,7 +1,66 @@
 
 --[[ todo
+	,. <> speed in sfx
 
 	changelog
+		v0.94
+			-- IMPORTANT -- 
+			please delete the old installtion. I removed many files. Don't copy over an existing installation.
+			When you want to save your settings, save the jaP8e.ini file
+			
+			* main - own menm handling
+			* main - fix numblock handling
+			* main - ctrl+<number> change Module/Editor
+			* main - recolor toolbar
+			* main - Copy & Paste HEX - Ctrl+shift+c / Ctrl+Shift+v - copy/paste current module complete data as hex-memory-string.
+			* main - input fields have now a small cursor
+			* lua - shift+ctrl+<number> change view on the left side
+			* lua - shift + mouse wheel scroll in x direction
+			* label - add flip, rotate, shift
+			* font - adjustment on grid
+			* font - chars with the attribute "oneup" become "light-peach" instead of "white"
+			* pattern - flip, rotate, shift and invert option
+			* hex - rename sfx to sound
+			* sprite/map - ctrl + click on the right area will exchange the color
+			* luatic - removed many dlls. switch to opengl
+
+			
+			New Keyboard-Shortcuts (when this function exist in the module/editor)
+				A/- = cursor left
+				D/=/+ = cursor right
+				W = cursor up
+				S = cursor down
+				
+				< = slower
+				> = faster
+								
+				SHIFT + A/- = select cursor left
+				SHIFT + D/=/+ = select cursor right
+				SHIFT + W = select cursor up
+				SHIFT + S = select cursor down
+				
+				Q = previous color
+				E = next color
+				` = Color 0
+				SHIFT + ` = Color 10
+				0 - 9 = Color 0 - 9
+				SHIFT + 0 - 5 = Color 10 - 15				
+				
+				R = rotate left
+				T = rotate right
+				F = flip x
+				V = flip y
+				I = invert
+				LEFT/RIGHT/UP/DOWN = shift left/right/up/down
+				
+				STRG+H = show id/hex in area
+				STRG+G = show grid in area
+				STRG+F = show flags in area
+				
+				STRG+SHIFT+H = show id/hex in left overview
+				STRG+SHIFT+G = show grid in left overview
+				STRG+SHIFT+F = show flags in left overview
+			
 		
 		v0.93
 			* lua - fix background bug
@@ -92,12 +151,18 @@ cursorHand = nil
 -- some constants
 
 TITLE = "jaP8e"
-VERSION = "0.93 BETA"
+VERSION = "0.94 BETA"
 -- min size of the main window
 MINHEIGHT = 667
 MINWIDTH = 1306
 -- size of the scrollbars
 BARSIZE = 10
+
+-- toolbar colors
+local _TOOLBARBACK = 6
+local _TOOLBARBUTTONBACK = 140
+local _TOOLBARBUTTONHIGH = 12
+
 
 -- some filters for fileselect-box
 FILEFILTERIMAGE = "image|*.png;*.bmp;*.jpg|format png|*.png|format bmp|*.bmp|format jpg|*.jpg|all|*.*"
@@ -116,7 +181,9 @@ COLDARKGREY 	= {r=0x19, g=0x19, b=0x19, a=0xff}
 COLGREY 		= {r=0x33, g=0x33, b=0x33, a=0xff}
 COLLIGHTGREY 	= {r=0x66, g=0x66, b=0x66, a=0xff}
 COLRED 			= {r=0xFF, g=0x00, b=0x00, a=0xff}
-
+COLBLUE 		= {r=0x29, g=0xAD, b=0xFF, a=0xff}
+COLLIGHTBLUE	= {r=0x59, g=0xDD, b=0xFF, a=0xff}
+COLGREEN		= {r=0x29, g=0xFF, b=0xad, a=0xff}
 
 --===================================================================
 -----------------------------------------------------------------MISC
@@ -502,18 +569,17 @@ function DrawChar(x,y,char,col,zoom,f)
 	local _rect = f == 1 and _drawRectCharSource or _drawRectChar2Source
 	local _tex = f == 1 and _drawTextureChar or _drawTextureChar2
 
-	_tex:SetScaleMode(zoom<1 and "BEST" or "NEAREST")
-
 	local w,h = _rect.w , _rect.h 
 	
 	if char < 0x80 then
 		w /= 2
 	end	
 	
-	if not (char == 32 or char==nil or char == 9 or char == 0xa) then
+	if char != 32 and char != nil and char != 9 and char != 0xa then
 		_rect.x = _rect.w * (char & 0xf)
 		_rect.y = _rect.h * (char >> 4)
 		_tex:SetColorMod(col.r,col.g,col.b)
+		_tex:SetScaleMode(zoom < 1 and "BEST" or "NEAREST")
 		renderer:Copy(_tex,{_rect.x, _rect.y, w, _rect.h},{x,y, w * zoom ,h * zoom})
 	end
 	return x + w * zoom, y + h * zoom
@@ -672,8 +738,8 @@ local _filesActive = nil -- current open file-tab
 
 -- intialize
 function FilesInit()
-	buttons:Add("filesAdd","+")
-	buttons:Add("filesClose","X")
+	buttons:Add("filesAdd","+",nil,nil,nil,Pico.RGB[_TOOLBARBUTTONHIGH], Pico.RGB[7],Pico.RGB[_TOOLBARBUTTONBACK])
+	buttons:Add("filesClose","X",nil,nil,nil,Pico.RGB[_TOOLBARBUTTONHIGH], Pico.RGB[7],Pico.RGB[_TOOLBARBUTTONBACK])
 	buttons.filesAdd.OnClick = function(but) FilesNew() end
 	buttons.filesClose.OnClick = function(but) FilesRemove() end
 	return true
@@ -706,7 +772,7 @@ end
 function FilesNew()
 	_filesCount += 1	
 	local id = "files".. _filesCount
-	local but = buttons:Add(id, "New".._filesCount,nil,nil,"_filesTab", ColorOffset(Pico.RGB[1],0x33), Pico.RGB[7],ColorOffset(Pico.RGB[1],-0x11))
+	local but = buttons:Add(id, "New".._filesCount,nil,nil,"_filesTab", Pico.RGB[_TOOLBARBUTTONHIGH], Pico.RGB[7],Pico.RGB[_TOOLBARBUTTONBACK])
 	table.insert( 
 		_filesTab, 
 		{
@@ -904,6 +970,7 @@ end
 
 -- check if file is saved (or ask to save)
 function FilesCheckSaved()
+
 	if not activePico:IsSaved() then
 		local path, name, extension = SplitPathFileExtension( _filesActive.file )
 		local ret = SDL.Request.Message(window, TITLE, "Save file '" .. name .. "' ?","YESNOCANCEL QUESTION DEFAULT3")
@@ -1252,7 +1319,6 @@ end
 
 -- Init all modules
 function ModulesInit()
-	table.sort(modules, function (a,b) return a.sort < b.sort or (a.sort == b.sort and a.name < b.name) end)
 	
 	for nb,m in pairs(modules) do
 		-- quick and dirty activate
@@ -1268,7 +1334,7 @@ function ModulesInit()
 		
 		-- store result and add button
 		m.active = initalized 
-		m.tabButton = buttons:Add("Tab" .. m.name, m.name, nil, nil,"tabs", ColorOffset(Pico.RGB[1],0x33), Pico.RGB[7],ColorOffset(Pico.RGB[1],-0x11))		
+		m.tabButton = buttons:Add("Tab" .. m.name, m.name, nil, nil,"tabs", Pico.RGB[_TOOLBARBUTTONHIGH], Pico.RGB[7],Pico.RGB[_TOOLBARBUTTONBACK])		
 		m.tabButton.index = m
 		m.tabButton.visible = initalized
 		m.tabButton.shrinkOnDeselected = true
@@ -1294,7 +1360,11 @@ function ModuleActivate(module)
 		_modulesActive = module
 
 		-- activate correct menu bar
-		MenuActivate(module.menuBar or "DEFAULT")
+		if module.menuBar then
+			menu:Set(module.menuBar)
+		else
+			menu:Set(menu.default)
+		end
 		
 		-- send gained
 		ModulesCall("FocusGained")
@@ -1335,6 +1405,12 @@ function ModulesCall(fn,...)
 	end
 	return nil
 end
+
+-- check keyboard shortcut
+function ModulesCheckShorcut(sym,scan,mod)
+	return ShortcutCheck(_modulesActive.shortcut, sym, scan, mod)
+end
+
 
 -- check if a function exist
 function ModulesExistCall(fn)
@@ -1993,546 +2069,6 @@ end
 
 
 --===================================================================
------------------------------------------------------------------MENU
---===================================================================
-
-local _menuEntries = {} -- all menu entries
-local _menuZoomCurrent -- zoom level
-local _menuActive -- which menubar is active
-local _menuDefault -- default menu bar
-
--- set a menu with text, function and keyboard check
-function MenuAdd(parent, id, text, f, key)
-	local m1, m2, k 
-	if key then 
-		m1, m2, k = key:match("([^%+]-)%+?([^%+]-)%+?([^%+]-)$")
-	end
-	parent:Add(text,id)
-	_menuEntries[id] = {OnClick = f, key = k, ctrl = (m1 == "CTRL" or m2 == "CTRL"), shift = (m1 == "SHIFT" or m2 == "SHIFT"), alt = (m1 == "ALT" or m2 == "ALT")}
-	return _menuEntries[id]
-end
-
--- Call a menu entry
-function MenuCall(id,...)
-	-- when a menu id doesn't exit in the current menu, MenuIdActive will return false
-	if _menuEntries[id] and _menuEntries[id].OnClick and MenuIdActive(id) then 
-		return true, SecureCall( _menuEntries[id].OnClick,id,...)
-	end
-	return false
-end
-
--- check if a menu - shortcut has pressed
-function MenuCheckKeyboard(sym, mod)
-	local s = mod:hasflag("SHIFT") > 0
-	local c = mod:hasflag("CTRL") > 0
-	local a = mod:hasflag("ALT") > 0
-		
-	for id,e in pairs(_menuEntries) do
-		if e.key == sym and e.ctrl == c and e.shift == s and e.alt == a and MenuIdActive(id) then			
-			MenuCall(id)
-			return true
-		end
-	end
-	return false
-end
-
--- Add File-Menu to a bar
-function MenuAddFile(bar)
-	local mFile = bar:Add("&File")
-	--***************************
-	MenuAdd(mFile, "new", "New \t ctrl+n", function(e) FilesNew() end, "CTRL+N")
-	MenuAdd(mFile, "open", "Open ... \t ctrl+o", function(e) FilesOpen() end, "CTRL+O")	
-	MenuAdd(mFile, "save", "Save \t ctrl+s", function(e) FilesSave(true) end, "CTRL+S")	
-	MenuAdd(mFile, "saveas", "Save as... \t F12", function(e) FilesSave() end, "F12")
-	MenuAdd(mFile, "reload", "Reload \t ctrl+r", function(e) FilesReload() end, "CTRL+R")
-	MenuAdd(mFile, "close", "Close \t ctrl+w", function (e) FilesRemove() end, "CTRL+W")
-	mFile:Add()
-	local mExport = mFile:Add("Export",SDL.Menu.CreatePopup())
-	----------------------------------------------------------
-	MenuAdd(mExport, "export_spritessheet", "Spritesheet image",
-		function (e)
-			local file = RequestSaveFile(window, "Export spritesheet image", "spritesheet.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			data,pitch = SurfaceLock( surfaceCache128x128 )
-			activePico:SpriteRender(data, pitch, true)
-			SurfaceUnlock( surfaceCache128x128 )			
-			SurfaceSave(surfaceCache128x128, file)
-		end
-	)
-	MenuAdd(mExport, "export_label", "Label image",
-		function (e)
-			local file = RequestSaveFile(window, "Export label image", "label.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			data,pitch = SurfaceLock( surfaceCache128x128 )
-			activePico:LabelRender(data, pitch, true)
-			SurfaceUnlock( surfaceCache128x128 )			
-			SurfaceSave(surfaceCache128x128, file)
-		end
-	)
-	MenuAdd(mExport, "export_charset", "Font image",
-		function (e)
-			local file = RequestSaveFile(window, "Export font image", "font.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			data,pitch = SurfaceLock( surfaceCache128x128 )
-			activePico:CharsetRender(data,pitch)
-			SurfaceUnlock( surfaceCache128x128 )			
-			SurfaceSave(surfaceCache128x128, file)
-		end
-	)
-	MenuAdd(mExport, "export_map", "Map image",
-		function (e)
-			local file = RequestSaveFile(window, "Export map image", "map.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			ImageSaveMap(file)
-		end
-	)
-	
-	local mImport = mFile:Add("Import",SDL.Menu.CreatePopup())
-	----------------------------------------------------------
-	MenuAdd(mImport, "import_spritessheet", "Spritesheet image",
-		function (e)
-			local file = RequestOpenFile(window, "Import spritesheet image", "spritesheet.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			
-			ImageLoad128x128(
-				file, 
-				function(r,g,b) return activePico:ColorNearestPalette(r, g, b) end, 
-				function(col) local c = activePico:PaletteGetRGB(col) return c.r, c.g, c.b end,
-				activePico:Peek(Pico.SPRITEPOS) << 8
-			)			
-			
-		end
-	)
-	MenuAdd(mImport, "import_label", "Label image",
-		function (e)
-			local file = RequestOpenFile(window, "Import label image", "label.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			
-			ImageLoad128x128(
-				file, 
-				function(r,g,b) return activePico:ColorNearest(r, g, b) end, 
-				function(col) local c = Pico.RGB[col] return c.r, c.g, c.b end,
-				Pico.LABEL
-			)
-			
-			
-		end
-	)
-	MenuAdd(mImport, "import_Charset", "Font image",
-		function (e)
-			local file = RequestOpenFile(window, "Import font image", "font.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			
-			ImageLoadCharset(file)			
-			
-		end
-	)
-	MenuAdd(mImport, "import_map", "Map image",
-		function (e)
-			local file = RequestOpenFile(window, "Import map image", "map.png", FILEFILTERIMAGE)
-			if file == nil then return false end
-			
-			ImageLoadMap(
-				file, 
-				function(r,g,b) return activePico:ColorNearest(r, g, b) end, 
-				function(col) local c = Pico.RGB[col] return c.r, c.g, c.b end
-			)
-			
-			
-		end
-	)
-	---------------------------------------------
-	MenuAdd(mFile, "exit", "Exit \t alt+f4",
-		function (e)
-			SDL.Event.Push( {type="QUIT",timestamp=0} )
-		end
-	)
-		
-	
-	return mFile
-end
-
--- Add Edit-Menu to a bar
-function MenuAddEdit(bar)
-	local mEdit = bar:Add("&Edit")
-	--***************************
-	MenuAdd(mEdit, "undo", "Undo \t ctrl+z",
-		function (e)
-			local done, luaChanges = activePico:Undo() 
-			if done then												
-				MainWindowResize()
-				ModulesCall("Undo")
-				if luaChanges then
-					InfoBoxSet("Undo Lua code.")
-				else
-					InfoBoxSet("Undo")
-				end
-			end
-		end,
-		"CTRL+Z"
-	)		
-	MenuAdd(mEdit, "redo", "Redo \t ctrl+y",
-		function (e)
-			local done, luaChanges =activePico:Redo() 
-			if done then														
-				MainWindowResize()
-				ModulesCall("Redo")
-				if luaChanges then
-					InfoBoxSet("Redo Lua code.")
-				else
-					InfoBoxSet("Redo")
-				end
-			end
-		end,
-		"CTRL+Y"
-	)
-	MenuAdd(mEdit, "copy", "Copy \t ctrl+c",
-		function (e)
-			local str
-			if popup:HasFocus() then
-				str = popup:Copy()
-				if str != "" and str != nil then
-					InfoBoxSet("Copied '"..str.."'.")
-				end
-				
-			elseif ModulesCallSub("inputs","HasFocus") then
-				str =  ModulesCallSub("inputs", "Copy")
-				if str != "" and str != nil then
-					InfoBoxSet("Copied '"..str.."'.")
-				end
-			else
-				str = ModulesCall("Copy")
-			end
-			
-			
-			if str != "" and str != nil then
-				SDL.Clipboard.SetText(str)
-			end
-		end,
-		"CTRL+C"
-	)
-	MenuAdd(mEdit, "cut", "Cut \t ctrl+x",
-		function (e)
-			local str
-			if popup:HasFocus() then
-				str = popup:Copy()
-				if str != "" and str != nil then
-					InfoBoxSet("Copied '"..str.."'.")
-				end
-				
-			elseif ModulesCallSub("inputs","HasFocus") then
-				str =  ModulesCallSub("inputs", "Copy")
-				if str != "" and str != nil then
-					InfoBoxSet("Copied '"..str.."'.")
-				end
-			else
-				str = ModulesCall("Copy")
-			end
-			if str != "" and str != nil then
-				SDL.Clipboard.SetText(str)
-				ModulesCall("Delete")
-			end
-		end,
-		"CTRL+X"
-	)
-	MenuAdd(mEdit, "paste", "Paste \t ctrl+v",
-		function (e)
-			if SDL.Clipboard.HasText() then 
-				local str = SDL.Clipboard.GetText()
-				if str:sub(1,6) == "[cart]" and str:sub(-7) == "[/cart]" then
-					-- a cart has been pasted
-					
-					-- create a temp file
-					local name = os.tmpname()
-					local fin = io.open(name,"w+b")
-					if fin then
-						str = str:sub(7,-8)
-						for i = 1,#str,2 do
-							fin:write( string.char(tonumber("0x" .. str:sub(i,i+1)) or 0) )
-						end						
-						fin:close()
-						
-						-- load temp file as png
-						FilesOpen(name, true)
-						
-						-- and remove it
-						os.remove(name)
-					end
-				
-				elseif popup:HasFocus() then
-					popup:Paste(str)
-				elseif not ModulesCallSub("inputs", "Paste", str) then 
-					ModulesCall("Paste", str)
-				end
-			end
-		end,
-		"CTRL+V"
-	)
-	MenuAdd(mEdit, "delete", "Delete \t del",
-		function (e)
-			if not inputs:HasFocus() then	
-				ModulesCall("Delete")					
-			end
-		end
-		-- keyboard shortcut is handled directly in main!
-	)
-	MenuAdd(mEdit, "selectAll", "Select all \t ctrl+a",
-		function (e)
-			ModulesCall("SelectAll")
-		end,
-		"CTRL+A"
-	)	
-		
-	return mEdit
-end
-
--- Add Pico-8-Menu to a bar
-function MenuAddPico8(bar)
-	local mPico = bar:Add("&Pico-8")
-	--****************************
-	MenuAdd(mPico, "run", "Save and Run\t F5", 
-		function (e)	
-			FilesRun()
-		end,
-		"F5"
-	)
-	MenuAdd(mPico, "export", "Export..",
-		function (e)
-			FilesExport()
-		end,
-		nil
-	)
-	mPico:Add()
-	MenuAdd(mPico, "pico8execute", "Set Pico8 executeable",
-		function(e)
-			PicoRemoteSetting()
-		end
-	)
-	
-	MenuAdd(mPico, "writeProtectedPico8", "Write protect while running", function()
-		config.writeProtectedPico8 = not config.writeProtectedPico8
-		_menuActive:SetCheck("writeProtectedPico8", config.writeProtectedPico8)
-	end)
-	
-	MenuAdd(mPico, "doRemote", "Use pico 8 remote for audio",
-		function (e)
-			config.doRemote = not config.doRemote
-			if config.doRemote then
-				config.doRemote = PicoRemoteStart()
-			else
-				PicoRemoteStop()
-			end
-			_menuActive:SetCheck("doRemote", config.doRemote)
-		end
-	)	
-		
-	MenuAdd(mPico, "resetPalette", "Reset palette to default",
-		function (e)
-			for i=0, Pico.PALLEN - 1 do
-				activePico:Poke(Pico.PAL + i, i)
-			end
-		end
-	)
-end
-
--- Add Zoom-Menu to a bar
-function MenuAddZoom(bar)	
-	local menuZoom = bar:Add("&Zoom")
-	--*************************
-	for nb,z in pairs(zoomLevels) do
-		MenuAdd(menuZoom, z[1], z[3],
-			MenuSetZoom,
-			nil
-		)
-	end
-	menuZoom:Add()
-	MenuAdd(menuZoom, "autooverviewzoom", "Automatic zoom on sprite/font/label",
-		function (e)
-			config.doAutoOverviewZoom = not config.doAutoOverviewZoom
-			_menuActive:SetCheck("autooverviewzoom", config.doAutoOverviewZoom)
-		end
-	)
-	
-	return menuZoom
-	
-end
-
--- Add Settings-Menu to a bar
-function MenuAddSettings(bar)
-	local mSettings = bar:Add("&Options")
-	--***********************************
-	
-	MenuAdd(mSettings, "sizeAsHex", "Use hex values for size",
-		function (e)
-			config.sizeAsHex = not config.sizeAsHex
-			_menuActive:SetCheck("sizeAsHex", config.sizeAsHex)
-		end
-	)		
-	
-	
-	mSettings:Add()
-	
-	MenuAdd(mSettings, "doDithering", "use dithering",
-		function (e)
-			config.doDithering = not config.doDithering
-			_menuActive:SetCheck("doDithering", config.doDithering)
-		end
-	)
-	
-	MenuAdd(mSettings, "doDitheringFloydSteinberg", "  use Floyd-Steinberg for dithering",
-		function(e)
-			config.doDitheringFloydSteinberg = not config.doDitheringFloydSteinberg
-			_menuActive:SetCheck("doDitheringFloydSteinberg", config.doDitheringFloydSteinberg)
-		end
-	)			
-			
-	MenuAdd(mSettings, "doColorOptimization", "optimize color palette when importing spritesheet",
-		function (e)
-			config.doColorOptimization = not config.doColorOptimization
-			_menuActive:SetCheck("doColorOptimization", config.doColorOptimization)
-		end
-	)
-	
-	MenuAdd(mSettings, "doGreyScale", "'black && white' import",
-		function (e)
-			config.doGreyScale = not config.doGreyScale
-			_menuActive:SetCheck("doGreyScale", config.doGreyScale)
-		end
-	)
-	
-	MenuAdd(mSettings, "saveTransparentBlack", "Save transparent black on images",
-		function (e)
-			config.saveTransparentBlack = not config.saveTransparentBlack
-			_menuActive:SetCheck("saveTransparentBlack", config.saveTransparentBlack)
-		end
-	)
-	
-	return mSettings
-end
-
--- Add Debug-Menu to a bar
-function MenuAddDebug(bar)
-	local mDebug = bar:Add("&Debug")
-	MenuAdd(mDebug, "dodebug","Start debug", 
-		function(e)
-			print("Type 'cont' for continue")
-			debug.debug ()
-		end, 
-		nil
-	)
-	mDebug:Add()
-	MenuAdd(mDebug, "debugmsg","Show debug messages",
-		function(e)
-			config.debug = not config.debug
-			_menuActive:SetCheck("debugmsg", config.debug)
-			ConsoleShow(config.debug)
-			MainWindowTitle()
-		end
-	)
-end	
-
--- Attach a MenuBar to the main window
-function MenuActivate(bar)
-	if bar == "DEFAULT" then
-		bar = _menuDefault
-	end
-	if bar and bar != _menuActive then 
-		SDL.Menu.SetWindow(window,bar)
-		_menuActive = bar
-	end
-	-- update default-entrie check marks
-	_menuActive:SetCheck("saveTransparentBlack", config.saveTransparentBlack)
-	_menuActive:SetCheck("doGreyScale", config.doGreyScale)
-	_menuActive:SetCheck("doColorOptimization", config.doColorOptimization)
-	_menuActive:SetCheck("doDithering", config.doDithering)	
-	_menuActive:SetCheck("clipboardAsHex", config.clipboardAsHex)
-	_menuActive:SetCheck("autooverviewzoom", config.doAutoOverviewZoom)	
-	_menuActive:SetCheck("doRemote", config.doRemote)	
-	_menuActive:SetCheck("writeProtectedPico8", config.writeProtectedPico8)
-	_menuActive:SetCheck("sizeAsHex", config.sizeAsHex)
-	_menuActive:SetCheck("debugmsg",config.debug)
-	_menuActive:SetCheck("doDitheringFloydSteinberg", config.doDitheringFloydSteinberg)
-	MenuSetZoom()
-	-- call module-menu-update
-	ModulesCall("MenuUpdate",_menuActive)
-end
-
--- Return if a menu entry is enabled. If a menu entry doesn't exist, it returns false
-function MenuIdActive(id)
-	return _menuActive:GetEnable(id)
-end
-
--- Set all menu entries, function and add to window
-function MenuInit(window)
-	_menuDefault = SDL.Menu.Create()	
-	if _menuDefault == nil then return false end
-	
-	MenuAddFile(_menuDefault)
-	MenuAddEdit(_menuDefault)	
-	MenuAddPico8(_menuDefault)
-	--MenuAddZoom(_menuDefault)
-	MenuAddSettings(_menuDefault)
-	MenuAddDebug(_menuDefault)
-	
-	-- attach default menu
-	MenuActivate("DEFAULT")	
-	return true
-end
-
--- release resources
-function MenuQuit()
-	-- remove menu
-	SDL.Menu.SetWindow(window,nil)
-	-- destroy default menu
-	_menuDefault:Destroy()
-	_menuDefault = nil	
-end
-
--- Set zoom level (id or pixel)
-function MenuSetZoom(id)
-	id = id or _menuZoomCurrent
-
-	for nb,z in pairs(zoomLevels) do
-		if z[1] == id or z[2] == id then
-			-- change entry in the menu bar
-			_menuActive:SetRadio(zoomLevels[1][1], zoomLevels[#zoomLevels][1],z[1])
-			-- set zoom
-			_menuZoomCurrent = z[2]
-			ModulesCall("ZoomChange", z[2] )
-			return true
-			
-		end
-	end
-
-	return false
-end
-
--- return current zoom level
-function MenuGetZoom(id)
-	return _menuZoomCurrent
-end
-
--- "scroll" through zoom levels
-function MenuRotateZoom(up)
-	if not config.doAutoOverviewZoom then return false end
-	
-	-- select maximum/minimum
-	local sel = up and zoomLevels[#zoomLevels][2] or zoomLevels[1][2]
-		
-	-- scan if a zoom level is higher than current but lower than selected
-	for nb,z in pairs(zoomLevels) do
-		if (up and _menuZoomCurrent < z[2] and z[2] < sel) or (not up and _menuZoomCurrent > z[2] and z[2] > sel)   then
-			sel = z[2]
-		end			
-	end
-
-	-- activate selected 
-	if sel != _menuZoomCurrent then 
-		MenuSetZoom(sel)
-	end
-end
-
---===================================================================
 -----------------------------------------------------------PicoRemote
 --===================================================================
 -- used as a sound-engine :)
@@ -2755,17 +2291,26 @@ end
 
 _drawMainWindowOldTimer = 0
 -- draw the main window
+
+
+
 function MainWindowDraw()
 	-- background
 	local ow, oh = renderer:GetOutputSize()
 
+
+
 	-- blue top bar for modules and files
-	DrawFilledRect({0, 0, ow, topLimit - 5} ,  Pico.RGB[1],255,true)
+	DrawFilledRect({0, menu.size, ow, topLimit - 5-menu.size} ,  Pico.RGB[_TOOLBARBACK],255,true)
 	
 	-- blue/red background for module-content (depend on writeprotect)
 	DrawFilledRect({0, topLimit - 5 , ow, oh - topLimit + 5 } , Pico.RGB[activePico.writeProtected and 130 or 1],255,true)
 	
 	local mmx,mmy = mx,my
+	
+	if menu:HasFocus() then
+		mmx, mmy = -1,-1
+	end
 	
 	if popup:HasFocus() then 
 		mmx, mmy = -1,-1 -- deactivate all highlight outside popup
@@ -2802,6 +2347,9 @@ function MainWindowDraw()
 	
 	-- draw the info box
 	InfoBoxDraw()
+	
+	-- draw menu
+	menu:Draw(mx,my)
 		
 	-- display max FPS for debug information
 	local str = string.format("%03.3f %03.3f", SDL.Time.Get()-_drawMainWindowOldTimer, 1/(SDL.Time.Get()-_drawMainWindowOldTimer))
@@ -2828,14 +2376,19 @@ end
 function MainWindowResize()
 	local ow, oh = renderer:GetOutputSize()
 	
-	FilesSetPosition(ow - 5, 5)
-	ModulesSetPosition(5, 5)
+	FilesSetPosition(ow - 5, 5 + menu.size)
+	ModulesSetPosition(5, 5 + menu.size)
 	
 	ModulesCall("Resize")
 end
 
 -- initalize everything, open main window
 function Init()
+	-- sort modules
+	table.sort(modules, function (a,b) return a.sort < b.sort or (a.sort == b.sort and a.name < b.name) end)
+	
+
+
 	-- load configuration	
 	ConfigLoad(configFile)
 	ConsoleShow(config.debug)
@@ -2845,20 +2398,26 @@ function Init()
 		SDL.Request.Message(nil,TITLE,"Couldn't open SDL.\n" .. SDL.Error.Get(),"OK STOP" )
 		return false
 	end
+	
+	print("SDL-Version:",SDL.Version.Get())
+	
 		
 	-- initalize sdl image
 	if not SDL.Image.Init("BMP JPG PNG") then
 		SDL.Request.Message(nil,TITLE,"Couldn't open SDL_Image.\n" .. SDL.Error.Get(),"OK STOP" )
 		return false
 	end
+	
+	print("SDL-Image-Version",SDL.Version.GetImage())
+	
 		
 	-- open window
-	window = SDL.Window.Create(TITLE, "CENTERED", "CENTERED", MINWIDTH, MINHEIGHT + SDL.Menu.Height(), "RESIZABLE HIDDEN")
+	window = SDL.Window.Create(TITLE, "CENTERED", "CENTERED", MINWIDTH, MINHEIGHT, "RESIZABLE HIDDEN")
 	if window == nil then
 		SDL.Request.Message(nil,TITLE,"Couldn't open main window.\n" .. SDL.Error.Get(),"OK STOP")
 		return false
 	end
-	window:SetMinimumSize(MINWIDTH, MINHEIGHT)
+	
 	MainWindowTitle("")
 	
 	local surface = SDL.Surface.Load("jaP8e.png")
@@ -2871,11 +2430,16 @@ function Init()
 	--SDL.Event.State( "DROPTEXT", "ENABLE" )
 	
 	-- Renderer
+	SDL.Hint.Set("RENDER_DRIVER","OPENGL")
+	
 	renderer = SDL.Render.Create(window, -1, "ACCELERATED PRESENTVSYNC TARGETTEXTURE")
 	if renderer == nil then
 		SDL.Request.Message(nil,TITLE,"Couldn't open renderer.\n" .. SDL.Error.Get(),"OK STOP")
 		return false
 	end
+	local info = renderer:GetInfo()
+	print("Renderer:",info.name)
+	
 	
 	-- Menu and requester
 	if not SDL.Gui.Init() then
@@ -2896,7 +2460,7 @@ function Init()
 	end
 
 	-- Menu
-	if not MenuInit(window) then
+	if not menu:Init() then
 		SDL.Request.Message(nil,TITLE,"Couldn't initalize menus.\n","OK STOP")
 		return false
 	end
@@ -2915,7 +2479,9 @@ function Init()
 	-- caluculate top limit
 	local s
 	_,s	= buttons:GetSize("+")	
-	topLimit = 5 + s + 5+5
+	topLimit = menu.size + 5 + s + 5+5
+	window:SetSize(MINWIDTH, MINHEIGHT + menu.size)
+	window:SetMinimumSize(MINWIDTH, MINHEIGHT + menu.size)
 	
 	-- create a new file
 	FilesNew()
@@ -2928,6 +2494,8 @@ function Init()
 	PicoRemoteStart()
 	
 	SDL.TextInput.Start()	
+	
+	MainWindowResize()
 	
 	window:Show()
 	PrintDebug("Initalized.")
@@ -2953,7 +2521,7 @@ function Quit()
 	scrollbar:Quit()
 	popup:Quit()
 	
-	MenuQuit()
+	menu:Quit()
 	
 	DrawQuit()
 	
@@ -2984,6 +2552,60 @@ function Quit()
     PrintDebug("Quit")
 end
 
+local function _TranslateKP(sym,scan,mod)
+	if scan:sub(1,3) == "KP_" then
+		if scan == "KP_ENTER" then
+			scan,sym = "RETURN", "RETURN"
+		elseif mod:hasflag("NUM")>0 then
+			if scan == "KP_0" then 
+				sym,scan = "0", "0"
+			elseif scan == "KP_1" then 
+				sym,scan = "1", "1"
+			elseif scan == "KP_2" then 
+				sym,scan = "2", "2"
+			elseif scan == "KP_3" then 
+				sym,scan = "3", "3"
+			elseif scan == "KP_4" then 
+				sym,scan = "4", "4"
+			elseif scan == "KP_5" then 
+				sym,scan = "5", "5"
+			elseif scan == "KP_6" then 
+				sym,scan = "6", "6"
+			elseif scan == "KP_7" then 
+				sym,scan = "7", "7"
+			elseif scan == "KP_8" then 
+				sym,scan = "8", "8"
+			elseif scan == "KP_9" then 
+				sym,scan = "9", "9"
+			end
+		else
+			if scan == "KP_7" then 
+				sym,scan = "HOME","HOME"
+			elseif scan == "KP_8" then
+				sym,scan = "UP", "UP"
+			elseif scan == "KP_9" then
+				sym,scan = "PAGEUP", "PAGEUP"
+			elseif scan == "KP_4" then
+				sym,scan = "LEFT", "LEFT"
+			elseif scan == "KP_6" then
+				sym,scan = "RIGHT", "RIGHT"
+			elseif scan == "KP_1" then
+				sym,scan = "END", "END"
+			elseif scan == "KP_2" then
+				sym,scan = "DOWN", "DOWN"
+			elseif scan == "KP_3" then
+				sym,scan = "PAGEDOWN", "PAGEDOWN"
+			elseif scan == "KP_0" then
+				sym,scan = "INSERT", "INSERT"
+			elseif scan == "KP_PERIOD" then
+				sym,scan = "DELETE", "DELETE"
+			end				
+		end		
+	end
+	return sym,scan
+end
+
+
 -- main routine
 function main()
 	
@@ -3005,14 +2627,8 @@ function main()
 			
 			if ev.type == "QUIT" then
 				-- user request a quit
-				if FilesCheckAllSaved() then
+				if not quit and FilesCheckAllSaved() then
 					quit = true	
-				end
-				
-			elseif ev.type == "MENU" then
-				-- a menu item has clicked
-				if not MenuCall(ev.id) then
-					PrintDebug("menu pressed: ",ev.id)
 				end
 
 			elseif ev.type=="USER" then
@@ -3022,12 +2638,14 @@ function main()
 			
 			elseif ev.type == "MOUSEBUTTONDOWN" then
 				-- first check, if popup handle the event, then the next...
-				if not SecureCall(popup.MouseDown,popup,ev.x, ev.y, ev.button, ev.clicks) then
-					if not SecureCall(buttons.MouseDown, buttons, ev.x, ev.y, ev. button, ev.clicks) then
-						if not ModulesCallSub("scrollbar", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
-							if not ModulesCallSub("inputs", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
-								if not ModulesCallSub("buttons", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
-									ModulesCall("MouseDown", ev.x, ev.y, ev.button, ev.clicks )
+				if not menu:MouseDown(ev.x, ev.y, ev.button, ev.clicks) then
+					if not SecureCall(popup.MouseDown,popup,ev.x, ev.y, ev.button, ev.clicks) then
+						if not SecureCall(buttons.MouseDown, buttons, ev.x, ev.y, ev. button, ev.clicks) then
+							if not ModulesCallSub("scrollbar", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
+								if not ModulesCallSub("inputs", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
+									if not ModulesCallSub("buttons", "MouseDown", ev.x, ev.y, ev.button, ev.clicks ) then
+										ModulesCall("MouseDown", ev.x, ev.y, ev.button, ev.clicks )
+									end
 								end
 							end
 						end
@@ -3038,31 +2656,35 @@ function main()
 				
 			elseif ev.type == "MOUSEBUTTONUP" then	
 				-- first check, if popup handle the event, then the next...
-				if not SecureCall(popup.MouseUp, popup, ev.x, ev.y, ev.button, ev.clicks) then
-					if not SecureCall(buttons.MouseUp, buttons, ev.x, ev.y, ev.button, ev.clicks) then 
-						if not ModulesCallSub("scrollbar", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
-							if not ModulesCallSub("inputs", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
-								if not ModulesCallSub("buttons", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
-									ModulesCall("MouseUp", ev.x, ev.y, ev.button, ev.clicks )
+				if not menu:MouseUp(ev.x, ev.y, ev.button, ev.clicks) then
+					if not SecureCall(popup.MouseUp, popup, ev.x, ev.y, ev.button, ev.clicks) then
+						if not SecureCall(buttons.MouseUp, buttons, ev.x, ev.y, ev.button, ev.clicks) then 
+							if not ModulesCallSub("scrollbar", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
+								if not ModulesCallSub("inputs", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
+									if not ModulesCallSub("buttons", "MouseUp", ev.x, ev.y, ev.button, ev.clicks) then 
+										ModulesCall("MouseUp", ev.x, ev.y, ev.button, ev.clicks )
+									end
 								end
-							end
-						end								
+							end								
+						end
 					end
-				end				
+				end
 				mx = ev.x
 				my = ev.y
 				
 			elseif ev.type == "MOUSEMOTION" then	
 				-- first check, if popup handle the event, then the next...
-				if not SecureCall(popup.MouseMove, popup, ev.x, ev.y, ev.button) then
-					if not SecureCall(buttons.MouseMove, buttons, ev.x, ev.y, ev.button ) then 
-						if not ModulesCallSub("scrollbar", "MouseMove", ev.x, ev.y, ev.button) then 
-							if not ModulesCallSub("buttons", "MouseMove", ev.x, ev.y, ev.button) then 
-								if not ModulesCallSub("inputs", "MouseMove", ev.x, ev.y, ev.button) then 
-									ModulesCall("MouseMove", ev.x, ev.y, ev.button)
+				if not menu:MouseMove(ev.x, ev.y, ev.button) then
+					if not SecureCall(popup.MouseMove, popup, ev.x, ev.y, ev.button) then
+						if not SecureCall(buttons.MouseMove, buttons, ev.x, ev.y, ev.button ) then 
+							if not ModulesCallSub("scrollbar", "MouseMove", ev.x, ev.y, ev.button) then 
+								if not ModulesCallSub("buttons", "MouseMove", ev.x, ev.y, ev.button) then 
+									if not ModulesCallSub("inputs", "MouseMove", ev.x, ev.y, ev.button) then 
+										ModulesCall("MouseMove", ev.x, ev.y, ev.button)
+									end
 								end
-							end
-						end	
+							end	
+						end
 					end
 				end
 				mx = ev.x
@@ -3076,9 +2698,11 @@ function main()
 					x, y = -ev.x, -ev.y
 				end
 				-- first check, if popup handle the event, then the next...
-				if not SecureCall(popup.MouseWheel, popup, x, y, mx, my) then
-					if not ModulesCallSub("inputs", "MouseWheel", x, y, mx, my) then
-						ModulesCall("MouseWheel", x, y, mx, my)
+				if not menu:HasFocus() then
+					if not SecureCall(popup.MouseWheel, popup, x, y, mx, my) then
+						if not ModulesCallSub("inputs", "MouseWheel", x, y, mx, my) then
+							ModulesCall("MouseWheel", x, y, mx, my)
+						end
 					end
 				end
 				
@@ -3086,14 +2710,18 @@ function main()
 				if ev.event == "RESIZED" then
 					-- window has resized
 					MainWindowResize()
+					menu:Close()
 				
 				elseif ev.event == "FOCUS_GAINED" then
 					-- we got the focus
 					hasFocus = true
+					menu:Close()
 					
 				elseif ev.event == "FOCUS_LOST" then
 					-- and lost it again
 					hasFocus = false
+					menu:Close()
+					
 				end
 				
 			elseif ev.type == "RENDER_TARGETS_RESET" then
@@ -3103,18 +2731,21 @@ function main()
 			elseif ev.type == "KEYDOWN" then
 				--PrintDebug ("----- EVENT: "..tostring(ev.type).." -----")
 				--table.debug(ev)
-				--print("down",ev.sym, ev.scancode, ev.mod)	
+				ev.sym,ev.scancode = _TranslateKP(ev.sym,ev.scancode, ev.mod)
+				-- print("down",ev.sym, ev.scancode, ev.mod)	
 				 -- a message requester can filter a keyup!
 		
 				-- here first check, if a menu shortcut has pressed
-				if not MenuCheckKeyboard(ev.sym, ev.mod) then
+				if not menu:KeyDown(ev.sym, ev.scancode, ev.mod) then
 					if not SecureCall(popup.KeyDown, popup, ev.sym, ev.scancode, ev.mod) then
 						--PrintDebug(ev.sym, ev.scancode, ev.mod)				
 						if not ModulesCallSub("inputs", "KeyDown", ev.sym, ev.scancode, ev.mod) then
-							if ev.sym == "DELETE" and ModulesExistCall("Delete") then
-								ModulesCall("Delete")								
-							else						
-								ModulesCall("KeyDown",ev.sym, ev.scancode, ev.mod)
+							if not ModulesCheckShorcut(ev.sym, ev.scancode, ev.mod) then
+								if ev.sym == "DELETE" and ModulesExistCall("Delete") then
+									ModulesCall("Delete")								
+								else						
+									ModulesCall("KeyDown",ev.sym, ev.scancode, ev.mod)
+								end								
 							end
 						end
 					end
@@ -3122,25 +2753,24 @@ function main()
 					
 			elseif ev.type == "KEYUP" then
 				--print("up",ev.sym, ev.scancode, ev.mod)	
-				if ev.sym == "RALT" then
-					-- bug with german keyboard - lctrl is not released!
-					-- so we force all keys to released after the right alt key 
-					SDL.Keyboard.Reset()
-				end
-				
-				-- first check, if popup handle the event, then the next...				
-				if not SecureCall(popup.KeyUp, popup, ev.sym, ev.scancode, ev.mod) then
-					if not ModulesCallSub("inputs", "KeyUp", ev.sym, ev.scancode, ev.mod) then
-						ModulesCall("KeyUp",ev.sym, ev.scancode, ev.mod)
-					end			
+				ev.sym,ev.scancode = _TranslateKP(ev.sym,ev.scancode, ev.mod)
+				-- first check, if popup handle the event, then the next...
+				if not menu:KeyUp(ev.sym, ev.scancode, ev.mod) then				
+					if not SecureCall(popup.KeyUp, popup, ev.sym, ev.scancode, ev.mod) then
+						if not ModulesCallSub("inputs", "KeyUp", ev.sym, ev.scancode, ev.mod) then
+							ModulesCall("KeyUp",ev.sym, ev.scancode, ev.mod)
+						end			
+					end
 				end
 			
 			
 			elseif ev.type == "TEXTINPUT" then
 				-- first check, if popup handle the event, then the next...
-				if not SecureCall(popup.Input, popup, ev.text ) then
-					if not ModulesCallSub("inputs","Input", ev.text) then
-						ModulesCall("Input", ev.text) 
+				if not menu:Input(ev.text) then
+					if not SecureCall(popup.Input, popup, ev.text ) then
+						if not ModulesCallSub("inputs","Input", ev.text) then
+							ModulesCall("Input", ev.text) 
+						end
 					end
 				end
 			
@@ -3158,8 +2788,7 @@ function main()
 			--]]
 			end	
 			
-		until (ev.type == nil)
-		
+		until (ev.type == nil )		
 		-- check for updates to store in the undo-buffer and set/unset unsaved-mark
 		-- only when no mouse button is pressed
 		local mb = SDL.Mouse.GetGlobalState()

@@ -126,18 +126,182 @@ local function _inpTextChange(inp)
 	m:Resize()
 end
 
+local function _DotGet(x,y)
+	local i = x + (y * 4)
+	local pat = _GetPattern(_selTemplate)
+	return pat & (1 << i) != 0 
+end
+
+local function _DotSet(x,y,state)
+	local i = x + (y * 4)
+	local pat = _GetPattern(_selTemplate)
+	
+	if state then
+		pat |= 1 << i
+	else
+		pat &= ~(1 << i)
+	end
+	
+	_SetPattern(_selTemplate, pat)	
+end
+
+local function _Shift(dx,dy)
+	local w,h = overArea.cellRect.w, overArea.cellRect.h
+	local xs,xe
+	local ys,ye
+	
+	if dx == -1 then
+		xs = 0
+		xe = 2
+	elseif dx == 1 then
+		xs = 2
+		xe = 0
+	else
+		xs = 0
+		xe = 3
+	end
+	
+	if dy == -1 then
+		ys = 0
+		ye = 2
+	elseif dy == 1 then
+		ys = 2
+		ye = 0
+	else
+		ys = 0
+		ye = 3
+	end
+
+	for yy = ys, ye, (ys<ye and 1 or -1)  do
+		for xx = xs, xe, (xs<xe and 1 or -1)  do
+			local x2 = (xx + dx) % 4
+			local y2 = (yy + dy) % 4
+			local s1,s2 = _DotGet(xx,yy), _DotGet(x2,y2)
+			_DotSet(xx,yy,s2)
+			_DotSet(x2,y2,s1)
+		end
+	end
+	m:Resize()
+end
+
+local function _ButInvert()
+	local pat = _GetPattern(_selTemplate)
+	pat = (~pat) & 0xffff
+	_SetPattern(_selTemplate, pat)
+	m:Resize()
+end
+
+local function _ButFlipX()
+	for y = 0,3 do
+		for x = 0,1 do
+			local p1,p2 = _DotGet(x,y), _DotGet(3-x,y)
+			_DotSet(x,y,p2)
+			_DotSet(3-x,y,p1)
+		end
+	end
+	m:Resize()
+end
+local function _ButFlipY()
+	for x = 0,3 do
+		for y = 0,1 do
+			local p1,p2 = _DotGet(x,y), _DotGet(x,3-y)
+			_DotSet(x,y,p2)
+			_DotSet(x,3-y,p1)
+		end
+	end
+	m:Resize()
+end
+
+local function _ButTurnRight(but)
+	for z = 0, 1 do
+		for d = 0, 2 - z * 2 do
+			local s1 = _DotGet(z+d,z)
+			local s2 = _DotGet(3-z,z+d)
+			local s3 = _DotGet(3-z-d,3-z)
+			local s4 = _DotGet(z,3-z-d)
+
+			_DotSet(z+d,z,s4)
+			_DotSet(3-z,z+d,s1)
+			_DotSet(3-z-d,3-z,s2)
+			_DotSet(z,3-z-d,s3)
+		end
+	end
+	m:Resize()
+end
+
+-- rotate to left
+local function _ButTurnLeft(but)
+	for z = 0, 1 do
+		for d = 0, 2 - z * 2 do
+			local s1 = _DotGet(z+d,z)
+			local s2 = _DotGet(3-z,z+d)
+			local s3 = _DotGet(3-z-d,3-z)
+			local s4 = _DotGet(z,3-z-d)
+
+			_DotSet(z+d,z,s2)
+			_DotSet(3-z,z+d,s3)
+			_DotSet(3-z-d,3-z,s4)
+			_DotSet(z,3-z-d,s1)
+		end
+	end
+	m:Resize()
+end
+
+
+local function _initShortcut()
+	local SelPattern = function(s)
+		if not s.shift and _selTemplate + s.off >= 0 and _selTemplate + s.off <= 255 then
+			_selTemplate += s.off
+		end
+		m:Resize()
+	end
+
+	m.shortcut = {}
+	ShortcutAddMoveCursor16x16(m.shortcut,SelPattern)
+	
+	ShortcutAddTransform(m.shortcut,
+		_ButFlipX,_ButFlipY,
+		_ButTurnLeft,_ButTurnLeft,
+		m.buttons.shiftLeft.OnClick,m.buttons.shiftRight.OnClick,
+		m.buttons.shiftUp.OnClick,m.buttons.shiftDown.OnClick,
+		_ButInvert
+	)		
+end
+
 function m.Init(m)
 	m.buttons = buttons:CreateContainer()
 	m.inputs = inputs:CreateContainer()
 	local b
 	
-	b = m.inputs:Add("hex", "Hex:", "0b0000000000000000  ")
+	b = m.buttons:Add("flipX", "Flip x", 100)
+	b.OnClick = _ButFlipX
+	b = m.buttons:Add("flipY", "Flip y", 100)
+	b.OnClick = _ButFlipY
+	
+	b = m.buttons:Add("turnLeft", "Turn left",100)
+	b.OnClick = _ButTurnLeft
+	b = m.buttons:Add("turnRight", "Turn right",100)
+	b.OnClick = _ButTurnRight
+	
+	b = m.buttons:Add("shiftLeft", "Shift left",100)
+	b.OnClick = function() _Shift(1,0) end
+	b = m.buttons:Add("shiftRight", "Shift right",100)
+	b.OnClick = function() _Shift(-1,0) end
+	b = m.buttons:Add("shiftUp", "Shift up",100)
+	b.OnClick = function() _Shift(0,1) end
+	b = m.buttons:Add("shiftDown", "Shift down",100)
+	b.OnClick = function() _Shift(0,-1) end
+	
+	b = m.buttons:Add("invert","Invert",100)
+	b.OnClick = _ButInvert
+	
+	b = m.inputs:Add("hex", "", "0x0000.0  ")
 	b.OnTextChange = _inpTextChange
 	
-	b = m.inputs:Add("bin", "Bin:", "0b0000000000000000  ")	
+	b = m.inputs:Add("bin", "Pattern:", "0b0000000000000000.000  ")	
 	b.OnTextChange = _inpTextChange
 	
-	b = m.inputs:Add("dez", "Dez:", "0b0000000000000000  ")
+	b = m.inputs:Add("dez", "", "+32767.125  ")
 	b.OnTextChange = _inpTextChange
 	
 	b = m.inputs:Add("col", "Color:", "0x00  ")
@@ -149,7 +313,7 @@ function m.Init(m)
 	b = m.inputs:Add("colpat",   "Color-Pattern:", "0b0000000000000000      ")
 	b.OnTextChange = _inpColorPat
 	
-	b = m.inputs:Add("fillp", "fillp:", "0b0000000000000000.000  ")	
+	b = m.inputs:Add("fillp", "fillp  :", "0b0000000000000000.000  ")	
 	b.OnTextChange = _inpFillp
 	b = m.inputs:Add("fillpHex","", "0x0000.0  ")
 	b.OnTextChange = _inpFillp
@@ -179,6 +343,8 @@ function m.Init(m)
 		
 	_texPattern = renderer:CreateTexture("RGBA32","STREAMING",4,4)
 	_texTemplate = renderer:CreateTexture("RGBA32","STREAMING",128,128)
+	
+	_initShortcut()
 	
 	return true
 end
@@ -212,12 +378,26 @@ function m.Resize(m)
 	_rectEdit = { x = x, y = y, w = 32 * 4, h = 32 * 4 }
 	_rectTemplate = { x = x - 16 * 32 - 10, y = y, w = 16 * 32, h = 16 * 32}
 	
-	m.inputs.bin:SetPos( x, y + 32*4 + 5)
-	m.inputs.hex:SetDown()
-	m.inputs.dez:SetDown()
-	
 	local b
-	b = m.buttons.trans:SetDown()
+	b = m.buttons.flipX:SetPos(x, y + 32*4 + 5)
+	m.buttons.shiftLeft:SetRight(1)
+	m.buttons.invert:SetRight(1)
+	
+	b = m.buttons.flipY:SetDown(b,1)
+	m.buttons.shiftRight:SetRight(1)
+	
+	b = m.buttons.turnLeft:SetDown(b,1)
+	m.buttons.shiftUp:SetRight(1)
+	
+	b = m.buttons.turnRight:SetDown(b,1)
+	m.buttons.shiftDown:SetRight(1)
+		
+	b = m.inputs.bin:SetDown(b)
+	m.inputs.hex:SetRight(1)
+	m.inputs.dez:SetRight(1)
+	
+	
+	b = m.buttons.trans:SetDown(b)
 	b.selected = _opt & b.index != 0
 	
 	b = m.buttons.sprites:SetDown()
@@ -414,19 +594,14 @@ function m.MouseDown(m, mx, my, mb)
 	
 	if mb == "LEFT" and SDL.Rect.ContainsPoint(_rectEdit, {mx, my}) then
 		local x = 3 - (mx - _rectEdit.x) \ 32
-		local y = 3 - (my - _rectEdit.y) \ 32
-		local i = x + (y * 4)
-		local pat = _GetPattern(_selTemplate)
-		print(pat, _selTemplate)
-		if pat & (1 << i) != 0 then
+		local y = 3 - (my - _rectEdit.y) \ 32	
+		if _DotGet(x,y) then
 			_lock = "unset"
-			pat &= ~(1 << i)
+			_DotSet(x,y,false)
 		else
 			_lock = "set"
-			pat |= 1 << i
+			_DotSet(x,y,true)
 		end
-		print("->",pat)
-		_SetPattern(_selTemplate, pat)
 		m:Resize()
 	
 	end
@@ -437,14 +612,11 @@ function m.MouseMove(m, mx, my)
 		if _lock == "unset" or _lock == "set" then
 			local x = 3 - (mx - _rectEdit.x) \ 32
 			local y = 3 - (my - _rectEdit.y) \ 32
-			local i = x + (y * 4)
-			local pat = _GetPattern(_selTemplate)
 			if _lock == "unset" then
-				pat &= ~(1 << i)
+				_DotSet(x,y,false)
 			else
-				pat |= 1 << i
-			end
-			_SetPattern(_selTemplate, pat)
+				_DotSet(x,y,true)
+			end			
 			m:Resize()			
 		end
 	
